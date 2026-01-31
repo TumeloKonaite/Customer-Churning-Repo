@@ -1,19 +1,10 @@
-from flask import Flask, request, jsonify,render_template
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import StandardScaler
-import pickle
+from flask import Flask, request, render_template
+
+from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
 
 
 application = Flask(__name__)
 app=application
-
-
-
-
-## import random regressor and standard scaler pickle
-Random_model = pickle.load(open('models/RandomClassifier.pkl', 'rb'))
-Standard_Scaler = pickle.load(open('models/sc.pkl', 'rb'))
 
 
 ## Route for home page
@@ -27,27 +18,33 @@ def index():
 def predict_datapoint():
     if request.method == 'POST':
 
-        CreditScore = float(request.form.get('CreditScore'))
-        Geography = request.form.get('Geography')
-        Gender = request.form.get('Gender')
-        Age = float(request.form.get('Age'))
-        Tenure = float(request.form.get('Tenure'))
-        Balance = float(request.form.get('Balance'))
-        NumOfProducts = float(request.form.get('NumOfProducts'))
-        HasCrCard = float(request.form.get('HasCrCard'))
-        IsActiveMember = float(request.form.get('IsActiveMember'))
-        EstimatedSalary = float(request.form.get('EstimatedSalary'))
+        credit_score = float(request.form.get('CreditScore'))
+        geography = request.form.get('Geography')
+        gender = request.form.get('Gender')
+        age = float(request.form.get('Age'))
+        tenure = float(request.form.get('Tenure'))
+        balance = float(request.form.get('Balance'))
+        num_of_products = float(request.form.get('NumOfProducts'))
+        has_cr_card = float(request.form.get('HasCrCard'))
+        is_active_member = float(request.form.get('IsActiveMember'))
+        estimated_salary = float(request.form.get('EstimatedSalary'))
 
-        # Encode categorical variables manually (like-for-like, not enhanced)
-        Gender = 1 if Gender == 'Male' else 0
-        geo_France = 1 if Geography == 'France' else 0
-        geo_Germany = 1 if Geography == 'Germany' else 0
-        geo_Spain = 1 if Geography == 'Spain' else 0
+        data = CustomData(
+            credit_score=credit_score,
+            geography=geography,
+            gender=gender,
+            age=age,
+            tenure=tenure,
+            balance=balance,
+            num_of_products=num_of_products,
+            has_cr_card=has_cr_card,
+            is_active_member=is_active_member,
+            estimated_salary=estimated_salary,
+        )
 
-        # Form the input vector
-        new_data_scaled = Standard_Scaler.transform([[geo_France, geo_Germany, geo_Spain, CreditScore, Gender, Age, Tenure, Balance, NumOfProducts, HasCrCard, IsActiveMember, EstimatedSalary]])
-
-        result = Random_model.predict(new_data_scaled)
+        pred_df = data.get_data_as_data_frame()
+        pipeline = PredictPipeline()
+        result = pipeline.predict(pred_df)
 
         if result[0] == 1:
             pred_text = "This customer is at high risk of leaving. Immediate retention actions are recommended."
@@ -85,4 +82,3 @@ def predict_datapoint():
 
 if __name__=="__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
-
