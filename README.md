@@ -1,6 +1,6 @@
 # Customer Churn Prediction Web App
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/Customer-Churning-Repo/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/Customer-Churning-Repo/actions/workflows/ci.yml)
+[![CI](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml/badge.svg)](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![Development Status](https://img.shields.io/badge/Status-Active-success.svg)](#development-status)
