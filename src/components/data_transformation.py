@@ -13,12 +13,16 @@ from src.logger import logging
 from src.utils import save_object
 
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
+
+
 @dataclass
 class DataTransformationConfig:
-    preprocessor_obj_file_path: str = os.path.join("artifacts", "preprocessor.pkl")
-    encoder_obj_file_path: str = os.path.join("artifacts", "encoder.pkl")
-    schema_file_path: str = os.path.join("artifacts", "schema.json")
-    feature_columns_file_path: str = os.path.join("artifacts", "feature_columns.json")
+    preprocessor_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "preprocessor.pkl")
+    encoder_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "encoder.pkl")
+    schema_file_path: str = os.path.join(ARTIFACTS_DIR, "schema.json")
+    feature_columns_file_path: str = os.path.join(ARTIFACTS_DIR, "feature_columns.json")
 
 
 class DataTransformation:
