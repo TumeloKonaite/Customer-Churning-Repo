@@ -14,99 +14,183 @@ from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
 application = Flask(__name__)
 app = application
 
-# Load model metadata
+# -----------------------------
+# Helpers
+# -----------------------------
+
+REQUIRED_FIELDS = [
+    "CreditScore",
+    "Geography",
+    "Gender",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary",
+]
+
+NUMERIC_FIELDS = {
+    "CreditScore": float,
+    "Age": float,
+    "Tenure": float,
+    "Balance": float,
+    "NumOfProducts": float,
+    "HasCrCard": float,
+    "IsActiveMember": float,
+    "EstimatedSalary": float,
+}
+
+
 def load_metadata():
+    """Load model metadata if present."""
     try:
-        with open('artifacts/metadata.json', 'r') as f:
+        with open("artifacts/metadata.json", "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {"training_date": "unknown", "model_name": "churn_predictor"}
+    except Exception:
+        # If metadata file exists but is malformed, don't break the app
+        return {"training_date": "unknown", "model_name": "churn_predictor"}
 
-# Health check endpoint
-@app.route('/health')
+
+def json_error(message: str, status_code: int = 400, errors=None):
+    payload = {"status": "error", "message": message}
+    if errors:
+        payload["errors"] = errors
+    return jsonify(payload), status_code
+
+
+def validate_payload(data: dict):
+    """Validate required fields and numeric coercion with useful error messages."""
+    missing = [k for k in REQUIRED_FIELDS if k not in data or data.get(k) in (None, "")]
+    if missing:
+        return False, [f"Missing required field: {k}" for k in missing]
+
+    # Validate numeric fields can be cast
+    cast_errors = []
+    for k, caster in NUMERIC_FIELDS.items():
+        try:
+            caster(data.get(k))
+        except Exception:
+            cast_errors.append(f"Field '{k}' must be a number (got {data.get(k)!r})")
+
+    if cast_errors:
+        return False, cast_errors
+
+    return True, None
+
+
+# -----------------------------
+# Routes
+# -----------------------------
+
+@app.route("/health", methods=["GET"])
 def health_check():
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'model_loaded': True,
-        'metadata': load_metadata()
-    })
+    # Keep it predictable for Docker healthchecks / tests.
+    return jsonify(
+        {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "model_loaded": True,
+            "metadata": load_metadata(),
+        }
+    ), 200
 
-# API endpoint for predictions
-@app.route('/api/predict', methods=['POST'])
+
+@app.route("/api/predict", methods=["POST"])
 def predict_api():
+    # Ensure JSON requests are handled properly
+    if not request.is_json:
+        return json_error(
+            "Content-Type must be application/json",
+            status_code=415,
+        )
+
+    data = request.get_json(silent=True)
+    if data is None:
+        return json_error("Invalid JSON body", status_code=400)
+
+    ok, errors = validate_payload(data)
+    if not ok:
+        return json_error("Invalid input payload", status_code=400, errors=errors)
+
     try:
-        data = request.json
-        
-        # Create CustomData instance
+        # Create CustomData instance (now safe to cast)
         data_instance = CustomData(
-            credit_score=float(data.get('CreditScore')),
-            geography=data.get('Geography'),
-            gender=data.get('Gender'),
-            age=float(data.get('Age')),
-            tenure=float(data.get('Tenure')),
-            balance=float(data.get('Balance')),
-            num_of_products=float(data.get('NumOfProducts')),
-            has_cr_card=float(data.get('HasCrCard')),
-            is_active_member=float(data.get('IsActiveMember')),
-            estimated_salary=float(data.get('EstimatedSalary'))
+            credit_score=float(data["CreditScore"]),
+            geography=str(data["Geography"]),
+            gender=str(data["Gender"]),
+            age=float(data["Age"]),
+            tenure=float(data["Tenure"]),
+            balance=float(data["Balance"]),
+            num_of_products=float(data["NumOfProducts"]),
+            has_cr_card=float(data["HasCrCard"]),
+            is_active_member=float(data["IsActiveMember"]),
+            estimated_salary=float(data["EstimatedSalary"]),
         )
 
         pred_df = data_instance.get_data_as_data_frame()
         pipeline = PredictPipeline()
         result, proba = pipeline.predict(pred_df)
 
-        # Calculate business metrics
         churn_probability = float(proba[0]) if proba is not None else None
-        clv = estimate_clv({
-            "Balance": data.get('Balance'),
-            "Tenure": data.get('Tenure'),
-            "EstimatedSalary": data.get('EstimatedSalary')
-        })
+
+        # Calculate business metrics (cast to floats for consistency)
+        clv = estimate_clv(
+            {
+                "Balance": float(data["Balance"]),
+                "Tenure": float(data["Tenure"]),
+                "EstimatedSalary": float(data["EstimatedSalary"]),
+            }
+        )
         action = recommended_action(churn_probability)
-        action_cost = ACTION_COSTS.get(action, 0.0)
+        action_cost = float(ACTION_COSTS.get(action, 0.0))
         net_gain = expected_net_gain(churn_probability, clv, action_cost)
 
         metadata = load_metadata()
-        
-        return jsonify({
-            'status': 'success',
-            'p_churn': churn_probability,
-            'predicted_label': int(result[0]),
-            'clv': clv,
-            'recommended_action': action,
-            'net_gain': net_gain,
-            'model_name': metadata.get('model_name'),
-            'model_version': metadata.get('version', '1.0.0'),
-            'timestamp': datetime.now().isoformat()
-        })
+
+        return jsonify(
+            {
+                "status": "success",
+                "p_churn": churn_probability,              # required by your tests
+                "predicted_label": int(result[0]),
+                "clv": clv,
+                "recommended_action": action,
+                "net_gain": net_gain,
+                "model_name": metadata.get("model_name"),
+                "model_version": metadata.get("version", "1.0.0"),
+                "timestamp": datetime.now().isoformat(),
+            }
+        ), 200
 
     except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 400
+        # If something unexpected happens (model load, pipeline error, etc.)
+        return json_error(f"Internal server error: {str(e)}", status_code=500)
 
-# Route for home page
-@app.route('/')
+
+# Home page
+@app.route("/")
 def index():
-    return render_template('index.html')
+    return render_template("index.html")
 
-# Route for predictions via web form
-@app.route('/predictdata', methods=['GET', 'POST'])
+
+# Web form endpoint (unchanged behavior, but still safe)
+@app.route("/predictdata", methods=["GET", "POST"])
 def predict_datapoint():
-    if request.method == 'POST':
+    if request.method == "POST":
         try:
-            credit_score = float(request.form.get('CreditScore'))
-            geography = request.form.get('Geography')
-            gender = request.form.get('Gender')
-            age = float(request.form.get('Age'))
-            tenure = float(request.form.get('Tenure'))
-            balance = float(request.form.get('Balance'))
-            num_of_products = float(request.form.get('NumOfProducts'))
-            has_cr_card = float(request.form.get('HasCrCard'))
-            is_active_member = float(request.form.get('IsActiveMember'))
-            estimated_salary = float(request.form.get('EstimatedSalary'))
+            credit_score = float(request.form.get("CreditScore"))
+            geography = request.form.get("Geography")
+            gender = request.form.get("Gender")
+            age = float(request.form.get("Age"))
+            tenure = float(request.form.get("Tenure"))
+            balance = float(request.form.get("Balance"))
+            num_of_products = float(request.form.get("NumOfProducts"))
+            has_cr_card = float(request.form.get("HasCrCard"))
+            is_active_member = float(request.form.get("IsActiveMember"))
+            estimated_salary = float(request.form.get("EstimatedSalary"))
 
             data = CustomData(
                 credit_score=credit_score,
@@ -150,7 +234,7 @@ def predict_datapoint():
                 pred_text = f"{pred_text} (Churn probability: {churn_probability:.2%})"
 
             return render_template(
-                'home.html',
+                "home.html",
                 results=pred_text,
                 churn_probability=churn_probability,
                 clv=clv,
@@ -160,7 +244,7 @@ def predict_datapoint():
 
         except Exception as e:
             return render_template(
-                'home.html',
+                "home.html",
                 error=f"Error processing request: {str(e)}",
                 results=None,
                 churn_probability=None,
@@ -170,7 +254,7 @@ def predict_datapoint():
             )
 
     return render_template(
-        'home.html',
+        "home.html",
         results=None,
         churn_probability=None,
         clv=None,
@@ -178,6 +262,7 @@ def predict_datapoint():
         net_gain=None,
     )
 
+
 if __name__ == "__main__":
-    # Change port to 5000 to match Docker configuration
+    # Keep port 5000 for Docker; binding to 0.0.0.0 is required for container access
     app.run(host="0.0.0.0", port=5000, debug=True)
