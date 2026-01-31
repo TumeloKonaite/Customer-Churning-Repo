@@ -9,13 +9,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Run tests
+
+      - name: Run unit tests
         run: python -m pytest
+
+      # Docker smoke test (build + run + hit /health and /api/predict)
+      - name: Docker build
+        run: docker build -t churn-predictor:latest .
+
+      - name: Docker smoke test
+        run: |
+          docker run -d --name churn -p 5000:5000 churn-predictor:latest
+
+          # wait for the server to be ready (max ~30s)
+          for i in {1..30}; do
+            if curl -fsS http://localhost:5000/health >/dev/null; then
+              echo "Health OK"
+              break
+            fi
+            sleep 1
+          done
+
+          # verify health endpoint
+          curl -fsS http://localhost:5000/health
+
+          # verify prediction endpoint
+          curl -fsS -X POST http://localhost:5000/api/predict \
+            -H "Content-Type: application/json" \
+            -d '{"CreditScore":619,"Geography":"France","Gender":"Female","Age":42,"Tenure":2,"Balance":0,"NumOfProducts":1,"HasCrCard":1,"IsActiveMember":1,"EstimatedSalary":101348.88}'
+
+          # print logs for debugging if something goes wrong
+          docker logs churn
+
+          docker stop churn
+          docker rm churn
