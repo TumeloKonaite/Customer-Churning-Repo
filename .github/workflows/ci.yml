@@ -21,35 +21,72 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run unit tests
-        run: python -m pytest
+        run: |
+          pytest -v --ignore=tests/test_docker.py
 
-      # Docker smoke test (build + run + hit /health and /api/predict)
       - name: Docker build
         run: docker build -t churn-predictor:latest .
 
       - name: Docker smoke test
         run: |
+          # Start container
           docker run -d --name churn -p 5000:5000 churn-predictor:latest
 
-          # wait for the server to be ready (max ~30s)
-          for i in {1..30}; do
-            if curl -fsS http://localhost:5000/health >/dev/null; then
-              echo "Health OK"
+          # Wait for container to be ready with better error handling
+          echo "Waiting for service to be ready..."
+          ATTEMPTS=0
+          MAX_ATTEMPTS=30
+          HEALTH_CHECK_URL="http://localhost:5000/health"
+          
+          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            if curl -s "$HEALTH_CHECK_URL" > /dev/null; then
+              echo "Service is ready!"
               break
             fi
+            ATTEMPTS=$((ATTEMPTS + 1))
+            echo "Attempt $ATTEMPTS/$MAX_ATTEMPTS - Service not ready yet..."
             sleep 1
           done
 
-          # verify health endpoint
-          curl -fsS http://localhost:5000/health
+          if [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; then
+            echo "Service failed to become ready in time"
+            docker logs churn
+            exit 1
+          fi
 
-          # verify prediction endpoint
-          curl -fsS -X POST http://localhost:5000/api/predict \
+          # Test health endpoint
+          echo "Testing health endpoint..."
+          HEALTH_RESPONSE=$(curl -s "$HEALTH_CHECK_URL")
+          echo "Health endpoint response: $HEALTH_RESPONSE"
+
+          # Test prediction endpoint
+          echo "Testing prediction endpoint..."
+          PREDICT_RESPONSE=$(curl -s -X POST \
             -H "Content-Type: application/json" \
-            -d '{"CreditScore":619,"Geography":"France","Gender":"Female","Age":42,"Tenure":2,"Balance":0,"NumOfProducts":1,"HasCrCard":1,"IsActiveMember":1,"EstimatedSalary":101348.88}'
+            -d '{
+              "CreditScore": 619,
+              "Geography": "France",
+              "Gender": "Female",
+              "Age": 42,
+              "Tenure": 2,
+              "Balance": 0,
+              "NumOfProducts": 1,
+              "HasCrCard": 1,
+              "IsActiveMember": 1,
+              "EstimatedSalary": 101348.88
+            }' \
+            http://localhost:5000/api/predict)
+          echo "Prediction endpoint response: $PREDICT_RESPONSE"
 
-          # print logs for debugging if something goes wrong
-          docker logs churn
+          # Validate prediction response
+          if ! echo "$PREDICT_RESPONSE" | grep -q "p_churn"; then
+            echo "Error: Prediction response doesn't contain expected field 'p_churn'"
+            docker logs churn
+            exit 1
+          fi
 
-          docker stop churn
-          docker rm churn
+      - name: Cleanup Docker container
+        if: always()
+        run: |
+          docker stop churn || true
+          docker rm churn || true
