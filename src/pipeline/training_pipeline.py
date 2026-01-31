@@ -15,9 +15,11 @@ class TrainingPipeline:
             train_arr, test_arr, _ = DataTransformation().initiate_data_transformation(
                 train_data, test_data
             )
-            score = ModelTrainer().initiate_model_trainer(train_arr, test_arr)
+            training_result = ModelTrainer().initiate_model_trainer(
+                train_arr, test_arr
+            )
             logging.info("Training pipeline completed")
-            return score
+            return training_result
         except Exception as e:
             raise CustomException(e, sys)
 
