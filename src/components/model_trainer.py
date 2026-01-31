@@ -8,7 +8,8 @@ from sklearn.tree import DecisionTreeClassifier
 
 from src.exception import CustomException
 from src.logger import logging
-from src.utils import save_object, evaluate_models
+from src.metrics import compute_classification_metrics, lift_curve
+from src.utils import evaluate_models, save_object
 
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -85,12 +86,33 @@ class ModelTrainer:
                 f"Best model: {best_model_name} with ROC-AUC {best_model_score:.3f}"
             )
 
+            if hasattr(best_model, "predict_proba"):
+                y_test_scores = best_model.predict_proba(X_test)[:, 1]
+                threshold = 0.5
+            elif hasattr(best_model, "decision_function"):
+                y_test_scores = best_model.decision_function(X_test)
+                threshold = 0.0
+            else:
+                y_test_scores = best_model.predict(X_test)
+                threshold = 0.5
+
             save_object(
                 file_path=self.model_trainer_config.trained_model_file_path,
                 obj=best_model,
             )
 
-            return best_model_score
+            metrics = compute_classification_metrics(
+                y_true=y_test, y_score=y_test_scores, threshold=threshold
+            )
+            metrics["roc_auc"] = float(best_model_score)
+            metrics["lift_curve"] = lift_curve(y_test, y_test_scores)
+
+            return {
+                "best_model_name": best_model_name,
+                "best_model_score": float(best_model_score),
+                "metrics": metrics,
+                "model_path": self.model_trainer_config.trained_model_file_path,
+            }
 
         except Exception as e:
             raise CustomException(e, sys)
