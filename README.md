@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml/badge.svg)](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Development Status](https://img.shields.io/badge/Status-Active-success.svg)](#development-status)
 [![Git Workflow](https://img.shields.io/badge/GitHub-Flow-blue.svg)](https://docs.github.com/en/get-started/quickstart/github-flow)
 
 ## Overview
-This Flask web application predicts customer churn using a pre-trained scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
+This Flask web application predicts customer churn using a scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
 
-The training pipeline is built in the notebook and saves a serialized artifact to `artifacts/model.pkl`.
+Training is notebook-independent via a pipeline and a CLI-style entrypoint. It saves model artifacts and metadata (including evaluation metrics and feature schema) under `artifacts/`.
 
 ## Features
 - User-friendly input form for customer data
@@ -67,12 +67,20 @@ make test    # run tests
 Visit: [http://127.0.0.1:5001](http://127.0.0.1:5001)
 
 ## Model Training
-- Notebook: `notebooks/Churning problem using multiple Classification Models.ipynb`
-- Output artifact: `artifacts/model.pkl`
+- Entrypoint: `src/train.py` (runs the pipeline and writes `artifacts/metadata.json`)
+- Pipeline: `src/pipeline/training_pipeline.py`
+- Output artifacts:
+  - `artifacts/model.pkl`
+  - `artifacts/metadata.json`
+  - `artifacts/schema.json`
+  - `artifacts/feature_columns.json`
 
 ## Project Structure
 ```
 Customer-Churning-Repo/
+├─ .github/
+│  └─ workflows/
+│     └─ ci.yml
 ├─ application.py
 ├─ artifacts/
 ├─ dataset/
@@ -84,9 +92,17 @@ Customer-Churning-Repo/
 │  └─ Churning problem using multiple Classification Models.ipynb
 ├─ src/
 │  ├─ components/
+│  ├─ metrics.py
 │  ├─ pipeline/
+│  ├─ decisioning.py
+│  ├─ train.py
 │  └─ utils.py
 ├─ templates/
+├─ tests/
+│  ├─ test_decisioning.py
+│  ├─ test_metrics.py
+│  └─ test_training_metadata.py
+├─ pyproject.toml
 ├─ requirements.txt
 ├─ Makefile
 └─ README.md
