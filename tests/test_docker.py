@@ -2,6 +2,13 @@ import requests
 import pytest
 import time
 import docker
+import os
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_DOCKER_TESTS") != "1",
+    reason="Docker integration tests are opt-in. Set RUN_DOCKER_TESTS=1 to run.",
+)
 
 @pytest.fixture
 def docker_container():
