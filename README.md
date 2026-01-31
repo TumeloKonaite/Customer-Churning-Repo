@@ -17,6 +17,18 @@ The training pipeline is built in the notebook and saves a serialized artifact t
 - Actionable output (high risk vs. low risk)
 - Preprocessing + model bundled into a single pipeline artifact
 
+## Retention Decisioning (ROI Layer)
+The app includes a lightweight, deterministic decision engine that turns churn probability
+into a recommended retention action and a simple ROI proxy. It estimates CLV using a balance
+and tenure-based heuristic, assigns actions using fixed probability thresholds, and computes
+expected net gain as:
+
+```
+net_gain = (p_churn * clv) - action_cost
+```
+
+All assumptions and thresholds are documented in `src/decisioning.py`.
+
 ## Live Demo
 ![Live demo placeholder](docs/demo-placeholder.svg)
 

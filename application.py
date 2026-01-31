@@ -1,5 +1,11 @@
 from flask import Flask, request, render_template
 
+from src.decisioning import (
+    ACTION_COSTS,
+    estimate_clv,
+    expected_net_gain,
+    recommended_action,
+)
 from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
 
 
@@ -51,14 +57,44 @@ def predict_datapoint():
         else:
             pred_text = "This customer is likely to stay. No urgent retention action needed."
 
-        if proba is not None:
-            pred_text = f"{pred_text} (Churn probability: {proba[0]:.2%})"
+        churn_probability = None
+        clv = None
+        action = None
+        net_gain = None
 
-        return render_template('home.html', results=pred_text)
+        if proba is not None:
+            churn_probability = float(proba[0])
+            clv = estimate_clv(
+                {
+                    "Balance": balance,
+                    "Tenure": tenure,
+                    "EstimatedSalary": estimated_salary,
+                }
+            )
+            action = recommended_action(churn_probability)
+            action_cost = ACTION_COSTS.get(action, 0.0)
+            net_gain = expected_net_gain(churn_probability, clv, action_cost)
+            pred_text = f"{pred_text} (Churn probability: {churn_probability:.2%})"
+
+        return render_template(
+            'home.html',
+            results=pred_text,
+            churn_probability=churn_probability,
+            clv=clv,
+            action=action,
+            net_gain=net_gain,
+        )
 
 
     else:
-        return render_template('home.html')
+        return render_template(
+            'home.html',
+            results=None,
+            churn_probability=None,
+            clv=None,
+            action=None,
+            net_gain=None,
+        )
 
 
 
