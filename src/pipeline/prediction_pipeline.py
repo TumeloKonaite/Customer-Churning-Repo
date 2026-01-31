@@ -9,11 +9,13 @@ from src.utils import load_object
 
 class PredictPipeline:
     def __init__(self):
-        self.model_path = os.path.join("artifacts", "model.pkl")
-        self.scaler_path = os.path.join("artifacts", "preprocessor.pkl")
-        self.encoder_path = os.path.join("artifacts", "encoder.pkl")
-        self.schema_path = os.path.join("artifacts", "schema.json")
-        self.feature_columns_path = os.path.join("artifacts", "feature_columns.json")
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        artifacts_dir = os.path.join(project_root, "artifacts")
+        self.model_path = os.path.join(artifacts_dir, "model.pkl")
+        self.scaler_path = os.path.join(artifacts_dir, "preprocessor.pkl")
+        self.encoder_path = os.path.join(artifacts_dir, "encoder.pkl")
+        self.schema_path = os.path.join(artifacts_dir, "schema.json")
+        self.feature_columns_path = os.path.join(artifacts_dir, "feature_columns.json")
 
         with open(self.schema_path, "r") as f:
             schema = json.load(f)
@@ -49,7 +51,11 @@ class PredictPipeline:
                 df_final = df_final.reindex(columns=self.final_features, fill_value=0)
 
             preds = model.predict(df_final.values)
-            return preds
+            if hasattr(model, "predict_proba"):
+                proba = model.predict_proba(df_final.values)[:, 1]
+            else:
+                proba = None
+            return preds, proba
 
         except Exception as e:
             raise CustomException(e, sys)

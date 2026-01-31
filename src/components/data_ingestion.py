@@ -9,12 +9,16 @@ from src.exception import CustomException
 from src.logger import logging
 
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
+
+
 @dataclass
 class DataIngestionConfig:
-    source_data_path: str = os.path.join("dataset", "Churn_Modelling.csv")
-    train_data_path: str = os.path.join("artifacts", "train.csv")
-    test_data_path: str = os.path.join("artifacts", "test.csv")
-    raw_data_path: str = os.path.join("artifacts", "data.csv")
+    source_data_path: str = os.path.join(PROJECT_ROOT, "dataset", "Churn_Modelling.csv")
+    train_data_path: str = os.path.join(ARTIFACTS_DIR, "train.csv")
+    test_data_path: str = os.path.join(ARTIFACTS_DIR, "test.csv")
+    raw_data_path: str = os.path.join(ARTIFACTS_DIR, "data.csv")
 
 
 class DataIngestion:
