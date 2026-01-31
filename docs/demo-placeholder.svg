@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f2f5f7" />
+      <stop offset="100%" stop-color="#dfe6eb" />
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#bg)" />
+  <rect x="40" y="40" width="880" height="460" rx="24" fill="#ffffff" stroke="#c5cdd6" />
+  <rect x="80" y="90" width="520" height="26" rx="6" fill="#e8edf1" />
+  <rect x="80" y="140" width="740" height="26" rx="6" fill="#e8edf1" />
+  <rect x="80" y="190" width="700" height="26" rx="6" fill="#e8edf1" />
+  <rect x="80" y="240" width="360" height="26" rx="6" fill="#e8edf1" />
+  <rect x="80" y="300" width="280" height="36" rx="8" fill="#4f6d7a" />
+  <rect x="390" y="300" width="430" height="36" rx="8" fill="#b7c3cc" />
+  <text x="480" y="420" font-family="Arial, sans-serif" font-size="22" fill="#4f5b66" text-anchor="middle">
+    Live demo recording placeholder
+  </text>
+  <text x="480" y="452" font-family="Arial, sans-serif" font-size="14" fill="#6b7780" text-anchor="middle">
+    Replace with a GIF or screenshot of input → prediction → result
+  </text>
+</svg>

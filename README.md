@@ -17,15 +17,42 @@ The training pipeline is built in the notebook and saves a serialized artifact t
 - Actionable output (high risk vs. low risk)
 - Preprocessing + model bundled into a single pipeline artifact
 
+## Live Demo
+![Live demo placeholder](docs/demo-placeholder.svg)
+
+This demo shows the full flow:
+- user enters customer attributes
+- submits the form
+- receives a churn prediction with confidence score and guidance
+
 ## Quickstart
-1. Create and activate a virtual environment
-   - `uv venv`
-   - `source .venv/bin/activate`
-2. Install dependencies
-   - `uv pip install -r requirements.txt`
-3. Run the app
-   - `python application.py`
-4. Open the app in your browser (default: `http://127.0.0.1:5000`)
+
+### 1. Set up a virtual environment
+Choose **one** option:
+
+**Option A: using uv (recommended)**
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+**Option B: using Python venv**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Run common workflows
+```bash
+make train   # train model and save to artifacts/
+make run     # start the web app locally
+make test    # run tests
+```
+
+### 3. Open the app
+Visit: [http://127.0.0.1:5001](http://127.0.0.1:5001)
 
 ## Model Training
 - Notebook: `notebooks/Churning problem using multiple Classification Models.ipynb`
@@ -35,14 +62,21 @@ The training pipeline is built in the notebook and saves a serialized artifact t
 ```
 Customer-Churning-Repo/
 ├─ application.py
+├─ artifacts/
 ├─ dataset/
 │  └─ Churn_Modelling.csv
+├─ docs/
+│  └─ demo-placeholder.svg
+├─ logs/
 ├─ notebooks/
 │  └─ Churning problem using multiple Classification Models.ipynb
+├─ src/
+│  ├─ components/
+│  ├─ pipeline/
+│  └─ utils.py
 ├─ templates/
-├─ models/
-├─ artifacts/
 ├─ requirements.txt
+├─ Makefile
 └─ README.md
 ```
 
