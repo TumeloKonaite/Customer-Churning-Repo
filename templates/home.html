@@ -138,6 +138,21 @@
         </form>
 
         <h2>The churn prediction is: {{ results }}</h2>
+
+        {% if churn_probability is not none %}
+        <div class="form-group">
+            <label>Churn Probability:</label>
+            <div>{{ (churn_probability * 100) | round(2) }}%</div>
+        </div>
+        <div class="form-group">
+            <label>Recommended Retention Action:</label>
+            <div>{{ action }}</div>
+        </div>
+        <div class="form-group">
+            <label>Estimated Net Gain (ROI proxy):</label>
+            <div>${{ net_gain | round(2) }}</div>
+        </div>
+        {% endif %}
     </div>
 </body>
 </html>
