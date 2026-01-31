@@ -6,7 +6,7 @@ run:
 	$(PYTHON) application.py
 
 train:
-	$(PYTHON) -m src.pipeline.training_pipeline
+	$(PYTHON) -m src.train
 
 test:
-	$(PYTHON) -m unittest discover
+	$(PYTHON) -m pytest

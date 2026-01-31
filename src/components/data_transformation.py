@@ -55,6 +55,10 @@ class DataTransformation:
 
             target_column_name = self.target_column_name
             feature_columns = self.numerical_columns + self.categorical_columns
+            feature_schema = [
+                {"name": col, "dtype": str(train_df[col].dtype)}
+                for col in feature_columns
+            ]
 
             missing_cols = [col for col in feature_columns if col not in train_df.columns]
             if missing_cols:
@@ -117,6 +121,7 @@ class DataTransformation:
             schema = {
                 "num_cols": self.numerical_columns,
                 "all_cols": feature_columns,
+                "feature_schema": feature_schema,
             }
             with open(self.data_transformation_config.schema_file_path, "w") as f:
                 json.dump(schema, f)
