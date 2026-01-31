@@ -44,12 +44,15 @@ def predict_datapoint():
 
         pred_df = data.get_data_as_data_frame()
         pipeline = PredictPipeline()
-        result = pipeline.predict(pred_df)
+        result, proba = pipeline.predict(pred_df)
 
         if result[0] == 1:
             pred_text = "This customer is at high risk of leaving. Immediate retention actions are recommended."
         else:
             pred_text = "This customer is likely to stay. No urgent retention action needed."
+
+        if proba is not None:
+            pred_text = f"{pred_text} (Churn probability: {proba[0]:.2%})"
 
         return render_template('home.html', results=pred_text)
 
