@@ -294,4 +294,5 @@ def predict_datapoint():
 
 if __name__ == "__main__":
     # Binding to 0.0.0.0 is required for container access
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=5001, debug=debug)
