@@ -100,6 +100,11 @@ If these files are missing, the container will auto-train on startup by default.
   - `AUTO_TRAIN=1` (default): train if artifacts are missing
   - `AUTO_TRAIN=0`: skip training (prediction will fail if artifacts are absent)
 
+By default, training runs in the background so the server can start quickly. You can
+control this with `AUTO_TRAIN_ASYNC`:
+- `AUTO_TRAIN_ASYNC=1` (default): train in background
+- `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
+
 Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
 ## Project Structure

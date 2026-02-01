@@ -42,6 +42,13 @@ NUMERIC_FIELDS = {
     "EstimatedSalary": float,
 }
 
+REQUIRED_ARTIFACTS = [
+    "artifacts/schema.json",
+    "artifacts/preprocessor.pkl",
+    "artifacts/encoder.pkl",
+    "artifacts/model.pkl",
+]
+
 
 def load_metadata():
     """Load model metadata if present."""
@@ -82,6 +89,10 @@ def validate_payload(data: dict):
     return True, None
 
 
+def artifacts_ready() -> bool:
+    return all(os.path.exists(path) for path in REQUIRED_ARTIFACTS)
+
+
 # -----------------------------
 # Routes
 # -----------------------------
@@ -93,7 +104,7 @@ def health_check():
         {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
-            "model_loaded": True,
+            "model_loaded": artifacts_ready(),
             "metadata": load_metadata(),
         }
     ), 200
@@ -115,6 +126,12 @@ def predict_api():
     ok, errors = validate_payload(data)
     if not ok:
         return json_error("Invalid input payload", status_code=400, errors=errors)
+
+    if not artifacts_ready():
+        return json_error(
+            "Model artifacts are not ready yet. Please wait for training to finish.",
+            status_code=503,
+        )
 
     try:
         # Create CustomData instance (now safe to cast)
@@ -181,6 +198,17 @@ def index():
 def predict_datapoint():
     if request.method == "POST":
         try:
+            if not artifacts_ready():
+                return render_template(
+                    "home.html",
+                    error="Model artifacts are not ready yet. Please wait for training to finish.",
+                    results=None,
+                    churn_probability=None,
+                    clv=None,
+                    action=None,
+                    net_gain=None,
+                )
+
             credit_score = float(request.form.get("CreditScore"))
             geography = request.form.get("Geography")
             gender = request.form.get("Gender")
