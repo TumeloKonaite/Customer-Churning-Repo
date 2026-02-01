@@ -4,7 +4,11 @@ set -e
 if [ ! -f /app/artifacts/schema.json ] || \
    [ ! -f /app/artifacts/preprocessor.pkl ] || \
    [ ! -f /app/artifacts/encoder.pkl ]; then
-  if [ "${AUTO_TRAIN:-1}" = "1" ]; then
+  if [ -d /app/.artifacts_cache ] && [ "$(ls -A /app/.artifacts_cache)" ]; then
+    echo "Artifacts missing. Restoring from image cache..."
+    mkdir -p /app/artifacts
+    cp -r /app/.artifacts_cache/* /app/artifacts/
+  elif [ "${AUTO_TRAIN:-1}" = "1" ]; then
     if [ "${AUTO_TRAIN_ASYNC:-1}" = "1" ]; then
       echo "Artifacts missing. Training model in background..."
       python -m src.train &
