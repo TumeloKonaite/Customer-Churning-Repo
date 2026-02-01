@@ -40,7 +40,7 @@ The table below uses the same formulas and action costs defined in `src/decision
 | High risk | 0.75 | 15,000 | 8 | 80,000 | 19,000 | Discount or retention call | 50 | 14,200 |
 
 ## Live Demo
-![Live demo placeholder](docs/demo-placeholder.svg)
+![Live demo screenshot](docs/demo-ecs.png)
 
 This demo shows the full flow:
 - user enters customer attributes
