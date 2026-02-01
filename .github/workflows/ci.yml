@@ -54,36 +54,8 @@ jobs:
             exit 1
           fi
 
-          # Test health endpoint
-          echo "Testing health endpoint..."
-          HEALTH_RESPONSE=$(curl -s "$HEALTH_CHECK_URL")
-          echo "Health endpoint response: $HEALTH_RESPONSE"
-
-          # Test prediction endpoint
-          echo "Testing prediction endpoint..."
-          PREDICT_RESPONSE=$(curl -s -X POST \
-            -H "Content-Type: application/json" \
-            -d '{
-              "CreditScore": 619,
-              "Geography": "France",
-              "Gender": "Female",
-              "Age": 42,
-              "Tenure": 2,
-              "Balance": 0,
-              "NumOfProducts": 1,
-              "HasCrCard": 1,
-              "IsActiveMember": 1,
-              "EstimatedSalary": 101348.88
-            }' \
-            http://localhost:5000/api/predict)
-          echo "Prediction endpoint response: $PREDICT_RESPONSE"
-
-          # Validate prediction response
-          if ! echo "$PREDICT_RESPONSE" | grep -q "p_churn"; then
-            echo "Error: Prediction response doesn't contain expected field 'p_churn'"
-            docker logs churn
-            exit 1
-          fi
+          # Smoke test using Makefile target
+          BASE_URL="http://localhost:5000" make smoke
 
       - name: Cleanup Docker container
         if: always()
