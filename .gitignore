@@ -20,6 +20,8 @@ logs/
 
 # Artifacts
 artifacts/
+!artifacts/sample_metadata.json
+!artifacts/schema.example.json
 
 # OS
 .DS_Store
