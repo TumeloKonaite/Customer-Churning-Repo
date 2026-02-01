@@ -21,4 +21,9 @@ if [ ! -f /app/artifacts/schema.json ] || \
   fi
 fi
 
+if [ "${ENABLE_PORT_5000:-1}" = "1" ] && [ "${PORT:-5001}" != "5000" ]; then
+  echo "Forwarding port 5000 -> ${PORT:-5001}"
+  socat TCP-LISTEN:5000,fork TCP:127.0.0.1:${PORT:-5001} &
+fi
+
 exec "$@"
