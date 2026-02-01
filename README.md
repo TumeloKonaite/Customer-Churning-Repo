@@ -109,6 +109,8 @@ control this with `AUTO_TRAIN_ASYNC`:
 - `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
 
 You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
+If a volume is mounted, the container will restore artifacts from an internal
+image cache on first start to avoid re-training.
 Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
 ## Project Structure
