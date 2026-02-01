@@ -1,0 +1,20 @@
+services:
+  churn_predictor:
+    build: .
+    ports:
+      - "5001:5001"
+    volumes:
+      - artifacts:/app/artifacts
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - AUTO_TRAIN=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  artifacts:
