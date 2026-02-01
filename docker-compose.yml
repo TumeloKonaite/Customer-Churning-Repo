@@ -10,6 +10,7 @@ services:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - AUTO_TRAIN=1
+      - AUTO_TRAIN_ASYNC=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
