@@ -296,8 +296,12 @@ def predict_datapoint():
     )
 
 
-if __name__ == "__main__":
+def run_app():
     # Binding to 0.0.0.0 is required for container access
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
     port = int(os.getenv("PORT", "5001"))
     app.run(host="0.0.0.0", port=port, debug=debug)
+
+
+if __name__ == "__main__":
+    run_app()

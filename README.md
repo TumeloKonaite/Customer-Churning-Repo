@@ -34,7 +34,7 @@ All assumptions and thresholds are documented in `src/decisioning.py`.
 The table below uses the same formulas and action costs defined in `src/decisioning.py`.
 
 | Scenario | p_churn | Balance | Tenure | EstimatedSalary | CLV (proxy) | Action | Action Cost | Expected Net Gain |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
 | Low risk | 0.20 | 10,000 | 5 | 50,000 | 13,000 | No action | 0 | 2,600 |
 | Medium risk | 0.45 | 2,500 | 2 | 60,000 | 5,300 | Retention email | 5 | 2,380 |
 | High risk | 0.75 | 15,000 | 8 | 80,000 | 19,000 | Discount or retention call | 50 | 14,200 |
@@ -71,7 +71,10 @@ pip install -r requirements.txt
 make train   # train model and save to artifacts/
 make run     # start the web app locally
 make test    # run tests
+make reqs    # regenerate requirements.txt from pyproject.toml
 ```
+
+Canonical app entrypoint: `application.py` (with `main.py` as a thin shim).
 
 **Windows PowerShell (no make installed)**
 ```powershell
@@ -95,6 +98,10 @@ Visit: http://localhost:5001
 **Note:** Large binary artifacts are not committed. Example files for docs live in:
 - `artifacts/sample_metadata.json`
 - `artifacts/schema.example.json`
+
+## Dependencies
+`pyproject.toml` is the source of truth for dependencies (with `uv.lock` for locking).
+`requirements.txt` is generated for deployment and can be regenerated via `make reqs`.
 
 ## Docker Quick Start
 

@@ -8,7 +8,7 @@ else
 SMOKE_CMD = sh scripts/smoke.sh
 endif
 
-.PHONY: run train test smoke clean docker-* install lint
+.PHONY: run train test smoke clean docker-* install lint reqs
 
 # Development commands
 install:
@@ -22,6 +22,9 @@ train:
 
 test:
 	$(PYTHON) -m pytest
+
+reqs:
+	uv pip compile pyproject.toml -o requirements.txt
 
 smoke:
 	$(SMOKE_CMD)
