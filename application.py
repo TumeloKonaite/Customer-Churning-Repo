@@ -42,18 +42,22 @@ NUMERIC_FIELDS = {
     "EstimatedSalary": float,
 }
 
+PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
+
 REQUIRED_ARTIFACTS = [
-    "artifacts/schema.json",
-    "artifacts/preprocessor.pkl",
-    "artifacts/encoder.pkl",
-    "artifacts/model.pkl",
+    os.path.join(ARTIFACTS_DIR, "schema.json"),
+    os.path.join(ARTIFACTS_DIR, "preprocessor.pkl"),
+    os.path.join(ARTIFACTS_DIR, "encoder.pkl"),
+    os.path.join(ARTIFACTS_DIR, "model.pkl"),
 ]
 
 
 def load_metadata():
     """Load model metadata if present."""
+    metadata_path = os.path.join(ARTIFACTS_DIR, "metadata.json")
     try:
-        with open("artifacts/metadata.json", "r") as f:
+        with open(metadata_path, "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {"training_date": "unknown", "model_name": "churn_predictor"}

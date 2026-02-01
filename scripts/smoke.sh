@@ -25,6 +25,11 @@ if ! grep -q '"status"[[:space:]]*:[[:space:]]*"healthy"' "$health_body"; then
   cat "$health_body"
   exit 1
 fi
+if ! grep -q '"model_loaded"[[:space:]]*:[[:space:]]*true' "$health_body"; then
+  echo "Health check indicates model artifacts are not loaded."
+  cat "$health_body"
+  exit 1
+fi
 
 predict_status="$(curl -sS -o "$predict_body" -w "%{http_code}" \
   -H "Content-Type: application/json" \

@@ -2,6 +2,12 @@ PYTHON ?= python
 IMAGE_NAME = churn-predictor
 PORT = 5001
 
+ifeq ($(OS),Windows_NT)
+SMOKE_CMD = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke.ps1
+else
+SMOKE_CMD = sh scripts/smoke.sh
+endif
+
 .PHONY: run train test smoke clean docker-* install lint
 
 # Development commands
@@ -18,7 +24,7 @@ test:
 	$(PYTHON) -m pytest
 
 smoke:
-	sh scripts/smoke.sh
+	$(SMOKE_CMD)
 
 lint:
 	$(PYTHON) -m flake8 .
