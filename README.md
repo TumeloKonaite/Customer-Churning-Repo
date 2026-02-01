@@ -86,6 +86,9 @@ docker-compose up --build
 # Build the image
 docker build -t churn-predictor .
 
+# Optional: pre-train during build to avoid startup delays
+# docker build --build-arg RUN_TRAINING=1 -t churn-predictor .
+
 # Run the container
 docker run -p 5001:5001 churn-predictor
 ```
@@ -105,6 +108,7 @@ control this with `AUTO_TRAIN_ASYNC`:
 - `AUTO_TRAIN_ASYNC=1` (default): train in background
 - `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
 
+You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
 Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
 ## Project Structure

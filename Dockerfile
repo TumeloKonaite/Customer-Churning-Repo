@@ -13,6 +13,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 EXPOSE 5001
 
+# Optionally pre-train at build time to avoid startup delays
+ARG RUN_TRAINING=1
+RUN if [ "$RUN_TRAINING" = "1" ]; then python -m src.train; fi
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS http://localhost:5001/health || exit 1
 

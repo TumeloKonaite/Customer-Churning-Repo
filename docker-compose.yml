@@ -1,6 +1,9 @@
 services:
   churn_predictor:
-    build: .
+    build:
+      context: .
+      args:
+        RUN_TRAINING: "1"
     ports:
       - "5001:5001"
     volumes:
