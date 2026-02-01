@@ -1,6 +1,5 @@
-def main():
-    print("Hello from customer-churning-repo!")
+from application import run_app
 
 
 if __name__ == "__main__":
-    main()
+    run_app()
