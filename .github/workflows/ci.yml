@@ -25,12 +25,12 @@ jobs:
           pytest -v --ignore=tests/test_docker.py
 
       - name: Docker build
-        run: docker build -t churn-predictor:latest .
+        run: docker build --build-arg RUN_TRAINING=1 -t churn-predictor:latest .
 
       - name: Docker smoke test
         run: |
           # Start container
-          docker run -d --name churn -p 5000:5000 churn-predictor:latest
+          docker run -d --name churn -p 5000:5000 -e AUTO_TRAIN=0 churn-predictor:latest
 
           # Wait for container to be ready with better error handling
           echo "Waiting for service to be ready..."

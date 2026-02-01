@@ -73,6 +73,13 @@ make run     # start the web app locally
 make test    # run tests
 ```
 
+**Windows PowerShell (no make installed)**
+```powershell
+python -m src.train
+python application.py
+python -m pytest
+```
+
 ### 3. Open the app
 Visit: http://localhost:5001
 
@@ -105,6 +112,18 @@ docker run -p 5001:5001 churn-predictor
 ```
 
 Visit http://localhost:5001 to access the application.
+
+### Smoke Test
+```bash
+# macOS / Linux
+BASE_URL=http://localhost:5001 make smoke
+```
+
+```powershell
+# Windows PowerShell
+$env:BASE_URL="http://localhost:5001"
+make smoke
+```
 
 ## API Contract
 
