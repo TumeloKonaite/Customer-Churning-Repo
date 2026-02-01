@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install curl for HEALTHCHECK and remove apt cache
+# Install curl for HEALTHCHECK and socat for optional port forwarding
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl \
+  && apt-get install -y --no-install-recommends curl socat \
   && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

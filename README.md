@@ -111,6 +111,9 @@ control this with `AUTO_TRAIN_ASYNC`:
 You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
 If a volume is mounted, the container will restore artifacts from an internal
 image cache on first start to avoid re-training.
+
+For compatibility with some external smoke tests, the container can also
+forward port 5000 to the app port via `ENABLE_PORT_5000=1` (default).
 Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
 ## Project Structure
