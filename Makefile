@@ -2,7 +2,7 @@ PYTHON ?= python
 IMAGE_NAME = churn-predictor
 PORT = 5001
 
-.PHONY: run train test clean docker-* install lint
+.PHONY: run train test smoke clean docker-* install lint
 
 # Development commands
 install:
@@ -16,6 +16,9 @@ train:
 
 test:
 	$(PYTHON) -m pytest
+
+smoke:
+	sh scripts/smoke.sh
 
 lint:
 	$(PYTHON) -m flake8 .
