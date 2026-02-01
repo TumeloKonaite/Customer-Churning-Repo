@@ -1,8 +1,9 @@
 import os
 import time
-import docker
 import pytest
-import requests
+
+requests = pytest.importorskip("requests")
+docker = pytest.importorskip("docker")
 from docker.errors import DockerException
 
 
@@ -49,7 +50,7 @@ def docker_client():
 
 @pytest.fixture(scope="module")
 def docker_container(docker_client):
-    """Build and run the container; expose container:5000 on a random host port."""
+    """Build and run the container; expose container:5001 on a random host port."""
     image_tag = "churn-predictor:test"
 
     # Build image
@@ -62,7 +63,7 @@ def docker_container(docker_client):
     try:
         container = docker_client.containers.run(
             image_tag,
-            ports={"5000/tcp": None},  # random host port
+            ports={"5001/tcp": None},  # random host port
             detach=True,
             remove=True,
         )
@@ -72,7 +73,7 @@ def docker_container(docker_client):
     try:
         # Discover mapped host port
         container.reload()
-        port_info = container.attrs["NetworkSettings"]["Ports"]["5000/tcp"]
+        port_info = container.attrs["NetworkSettings"]["Ports"]["5001/tcp"]
         host_port = int(port_info[0]["HostPort"])
         base_url = f"http://localhost:{host_port}"
 

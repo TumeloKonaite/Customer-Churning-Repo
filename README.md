@@ -17,7 +17,7 @@ Training is notebook-independent via a pipeline and a CLI-style entrypoint. It s
 - Real-time churn prediction
 - Actionable output (high risk vs. low risk)
 - Preprocessing + model bundled into a single pipeline artifact
-- Docker support for easy deployment (exposes port 5000)
+- Docker support for easy deployment (exposes port 5001)
 
 ## Retention Decisioning (ROI Layer)
 The app includes a lightweight, deterministic decision engine that turns churn probability into a recommended retention action and a simple ROI proxy. It estimates CLV using a balance and tenure-based heuristic, assigns actions using fixed probability thresholds, and computes expected net gain as:
@@ -63,7 +63,7 @@ make test    # run tests
 ```
 
 ### 3. Open the app
-Visit: http://localhost:5000
+Visit: http://localhost:5001
 
 ## Model Training
 - Entrypoint: `src/train.py` (runs the pipeline and writes `artifacts/metadata.json`)
@@ -78,11 +78,7 @@ Visit: http://localhost:5000
 
 ### Using Docker Compose (Recommended)
 ```bash
-# Build and start the application
 docker-compose up --build
-
-# Stop the application
-docker-compose down
 ```
 
 ### Using Docker Directly
@@ -90,11 +86,35 @@ docker-compose down
 # Build the image
 docker build -t churn-predictor .
 
+# Optional: pre-train during build to avoid startup delays
+# docker build --build-arg RUN_TRAINING=1 -t churn-predictor .
+
 # Run the container
-docker run -p 5000:5000 churn-predictor
+docker run -p 5001:5001 churn-predictor
 ```
 
-Visit http://localhost:5000 to access the application.
+Visit http://localhost:5001 to access the application.
+
+### Artifacts + Auto-Training
+The app requires model artifacts under `artifacts/` (`schema.json`, `preprocessor.pkl`, `encoder.pkl`, etc.).
+If these files are missing, the container will auto-train on startup by default.
+
+- Control this behavior with `AUTO_TRAIN`:
+  - `AUTO_TRAIN=1` (default): train if artifacts are missing
+  - `AUTO_TRAIN=0`: skip training (prediction will fail if artifacts are absent)
+
+By default, training runs in the background so the server can start quickly. You can
+control this with `AUTO_TRAIN_ASYNC`:
+- `AUTO_TRAIN_ASYNC=1` (default): train in background
+- `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
+
+You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
+If a volume is mounted, the container will restore artifacts from an internal
+image cache on first start to avoid re-training.
+
+For compatibility with some external smoke tests, the container can also
+forward port 5000 to the app port via `ENABLE_PORT_5000=1` (default).
+Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
 ## Project Structure
 ```

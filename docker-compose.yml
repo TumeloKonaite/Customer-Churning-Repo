@@ -1,16 +1,26 @@
 services:
   churn_predictor:
-    build: .
+    build:
+      context: .
+      args:
+        RUN_TRAINING: "1"
     ports:
-      - "5000:5000"
+      - "5001:5001"
     volumes:
-      - ./artifacts:/app/artifacts
+      - artifacts:/app/artifacts
       - ./logs:/app/logs
     environment:
-      FLASK_ENV: development
-      FLASK_DEBUG: "1"
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - PORT=5001
+      - AUTO_TRAIN=1
+      - AUTO_TRAIN_ASYNC=1
+      - ENABLE_PORT_5000=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
       interval: 30s
       timeout: 3s
       retries: 3
+
+volumes:
+  artifacts:
