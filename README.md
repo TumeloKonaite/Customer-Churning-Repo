@@ -7,6 +7,8 @@
 [![Git Workflow](https://img.shields.io/badge/GitHub-Flow-blue.svg)](https://docs.github.com/en/get-started/quickstart/github-flow)
 [![Docker Ready](https://img.shields.io/badge/Docker-Ready-blue.svg)](#docker-quick-start)
 
+**Live Demo:** http://customer-churn-alb-1775269208.us-east-1.elb.amazonaws.com
+
 ## Overview
 This Flask web application predicts customer churn using a scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
 
@@ -179,6 +181,19 @@ curl -X POST http://localhost:5001/api/predict \
     "EstimatedSalary": 50000
   }'
 ```
+
+## Deployment (AWS ECS Fargate)
+The demo deploys the container to **ECS Fargate** behind an **Application Load Balancer (ALB)**.
+
+- Container images are pushed to **ECR**
+- **ECS** runs the container in a managed Fargate service
+- **ALB** routes traffic and performs health checks on `/health`
+- Logs stream to **CloudWatch Logs**
+- Model artifacts are baked into the image during CI (`RUN_TRAINING=1`) so ECS starts deterministically
+
+CI/CD is handled by GitHub Actions: on push to `main`, the workflow builds the image,
+pushes to ECR, and forces a new ECS deployment.
+Terraform files live in `infra/`.
 
 ### Artifacts + Auto-Training
 The app requires model artifacts under `artifacts/` (`schema.json`, `preprocessor.pkl`, `encoder.pkl`, etc.).
