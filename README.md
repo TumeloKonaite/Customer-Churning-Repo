@@ -12,7 +12,7 @@
 ## Overview
 This Flask web application predicts customer churn using a scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
 
-Training is notebook-independent via a pipeline and a CLI-style entrypoint. It saves model artifacts and metadata (including evaluation metrics and feature schema) under `artifacts/`.
+Training is notebook-independent via a pipeline and a CLI-style entrypoint. It saves model artifacts and metadata (including evaluation metrics and feature schema) under `artifacts/`. Real artifacts are generated via training or CI builds; the repo only keeps small example files for documentation.
 
 ## Features
 - User-friendly input form for customer data
@@ -91,6 +91,10 @@ Visit: http://localhost:5001
   - `artifacts/metadata.json`
   - `artifacts/schema.json`
   - `artifacts/feature_columns.json`
+  
+**Note:** Large binary artifacts are not committed. Example files for docs live in:
+- `artifacts/sample_metadata.json`
+- `artifacts/schema.example.json`
 
 ## Docker Quick Start
 

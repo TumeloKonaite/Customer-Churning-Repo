@@ -1,0 +1,31 @@
+{
+  "trained_at": "2026-02-01T00:00:00Z",
+  "model_name": "churn_predictor",
+  "model_path": "artifacts/model.pkl",
+  "metrics": {
+    "roc_auc": 0.86,
+    "precision": 0.72,
+    "recall": 0.64,
+    "f1": 0.68
+  },
+  "feature_schema": {
+    "raw_features": [
+      {"name": "CreditScore", "dtype": "int64"},
+      {"name": "Geography", "dtype": "object"},
+      {"name": "Gender", "dtype": "object"},
+      {"name": "Age", "dtype": "int64"}
+    ],
+    "input_columns": [
+      "CreditScore",
+      "Geography",
+      "Gender",
+      "Age"
+    ],
+    "transformed_columns": [
+      "CreditScore",
+      "Age",
+      "Geography_France",
+      "Gender_Female"
+    ]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "num_cols": [
+    "CreditScore",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary"
+  ],
+  "all_cols": [
+    "CreditScore",
+    "Geography",
+    "Gender",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary"
+  ],
+  "feature_schema": [
+    {"name": "CreditScore", "dtype": "int64"},
+    {"name": "Geography", "dtype": "object"},
+    {"name": "Gender", "dtype": "object"},
+    {"name": "Age", "dtype": "int64"},
+    {"name": "Tenure", "dtype": "int64"},
+    {"name": "Balance", "dtype": "float64"},
+    {"name": "NumOfProducts", "dtype": "int64"},
+    {"name": "HasCrCard", "dtype": "int64"},
+    {"name": "IsActiveMember", "dtype": "int64"},
+    {"name": "EstimatedSalary", "dtype": "float64"}
+  ]
+}
