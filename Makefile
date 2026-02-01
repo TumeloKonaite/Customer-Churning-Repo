@@ -1,6 +1,6 @@
 PYTHON ?= python
 IMAGE_NAME = churn-predictor
-PORT = 5000
+PORT = 5001
 
 .PHONY: run train test clean docker-* install lint
 
@@ -36,14 +36,14 @@ clean:
 docker-build:
 	docker build -t $(IMAGE_NAME) .
 
-docker-run: docker-build
+docker-run:
 	docker run -p $(PORT):$(PORT) $(IMAGE_NAME)
 
 docker-compose-up:
-	docker compose up --build
+	docker-compose up --build
 
 docker-compose-down:
-	docker compose down
+	docker-compose down
 
 # Development with Docker
 docker-dev: docker-compose-up

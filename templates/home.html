@@ -65,7 +65,7 @@
     <div class="login">
         <h1>Customer Churn Prediction</h1>
 
-        <form action="predictdata" method="post">
+        <form action="/predictdata" method="post">
             
             <div class="form-group">
                 <label for="CreditScore">Credit Score:</label>
@@ -138,6 +138,13 @@
         </form>
 
         <h2>The churn prediction is: {{ results }}</h2>
+
+        {% if error %}
+        <div class="form-group">
+            <label>Error:</label>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
 
         {% if churn_probability is not none %}
         <div class="form-group">
