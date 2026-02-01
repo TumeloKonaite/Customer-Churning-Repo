@@ -1,8 +1,9 @@
 import os
 import time
-import docker
 import pytest
 import requests
+
+docker = pytest.importorskip("docker")
 from docker.errors import DockerException
 
 
