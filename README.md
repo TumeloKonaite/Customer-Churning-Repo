@@ -28,6 +28,15 @@ net_gain = (p_churn * clv) - action_cost
 
 All assumptions and thresholds are documented in `src/decisioning.py`.
 
+### ROI Example Table
+The table below uses the same formulas and action costs defined in `src/decisioning.py`.
+
+| Scenario | p_churn | Balance | Tenure | EstimatedSalary | CLV (proxy) | Action | Action Cost | Expected Net Gain |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Low risk | 0.20 | 10,000 | 5 | 50,000 | 13,000 | No action | 0 | 2,600 |
+| Medium risk | 0.45 | 2,500 | 2 | 60,000 | 5,300 | Retention email | 5 | 2,380 |
+| High risk | 0.75 | 15,000 | 8 | 80,000 | 19,000 | Discount or retention call | 50 | 14,200 |
+
 ## Live Demo
 ![Live demo placeholder](docs/demo-placeholder.svg)
 
@@ -95,6 +104,82 @@ docker run -p 5001:5001 churn-predictor
 
 Visit http://localhost:5001 to access the application.
 
+## API Contract
+
+### Health Check
+`GET /health`
+
+**200 OK**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-02-01T12:34:56.789012",
+  "model_loaded": true,
+  "metadata": {
+    "training_date": "2026-02-01T09:15:00",
+    "model_name": "churn_predictor",
+    "version": "1.0.0"
+  }
+}
+```
+
+### Predict
+`POST /api/predict` (Content-Type: application/json)
+
+**Request body**
+```json
+{
+  "CreditScore": 650,
+  "Geography": "France",
+  "Gender": "Male",
+  "Age": 40,
+  "Tenure": 3,
+  "Balance": 60000,
+  "NumOfProducts": 2,
+  "HasCrCard": 1,
+  "IsActiveMember": 1,
+  "EstimatedSalary": 50000
+}
+```
+
+**200 OK**
+```json
+{
+  "status": "success",
+  "p_churn": 0.42,
+  "predicted_label": 1,
+  "clv": 67500.0,
+  "recommended_action": "Retention email",
+  "net_gain": 28345.0,
+  "model_name": "churn_predictor",
+  "model_version": "1.0.0",
+  "timestamp": "2026-02-01T12:34:56.789012"
+}
+```
+
+**Errors**
+- `400 Bad Request`: missing or invalid fields (see `errors` array)
+- `415 Unsupported Media Type`: Content-Type is not `application/json`
+- `503 Service Unavailable`: model artifacts not ready
+
+### Curl Example
+```bash
+curl -X POST http://localhost:5001/api/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "CreditScore": 650,
+    "Geography": "France",
+    "Gender": "Male",
+    "Age": 40,
+    "Tenure": 3,
+    "Balance": 60000,
+    "NumOfProducts": 2,
+    "HasCrCard": 1,
+    "IsActiveMember": 1,
+    "EstimatedSalary": 50000
+  }'
+```
+
 ### Artifacts + Auto-Training
 The app requires model artifacts under `artifacts/` (`schema.json`, `preprocessor.pkl`, `encoder.pkl`, etc.).
 If these files are missing, the container will auto-train on startup by default.
@@ -151,6 +236,29 @@ Customer-Churning-Repo/
 
 ## Development Status
 Active
+
+## Model Card
+### Model Details
+- Model type: scikit-learn binary classifier in a preprocessing pipeline
+- Task: predict customer churn (1 = churn, 0 = stay)
+- Output: class label plus churn probability
+
+### Intended Use
+- Support retention workflows by flagging high-risk customers
+- Provide a lightweight ROI proxy via the decisioning layer
+
+### Data
+- Training data: `dataset/Churn_Modelling.csv`
+- Features: numeric and categorical customer attributes used in the UI and API
+
+### Metrics
+- Metrics are stored in `artifacts/metadata.json` after training
+- Evaluation utilities in `src/metrics.py`
+
+### Limitations
+- The ROI layer is a heuristic, not a causal estimate
+- Model performance can drift as customer behavior changes
+- Not intended for automated adverse decisions without review
 
 ## Contributing
 1. Create a feature branch
