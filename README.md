@@ -99,6 +99,18 @@ Visit: http://localhost:5001
 - `artifacts/sample_metadata.json`
 - `artifacts/schema.example.json`
 
+## Model Performance
+Metrics below are pulled from the latest `artifacts/metadata.json` run.
+
+| Metric | Value |
+| --- | ---: |
+| ROC-AUC | 0.8697 |
+| F1 | 0.6070 |
+| Precision | 0.7937 |
+| Recall | 0.4914 |
+
+Dataset split: 80/20 train/test (stratified on `Exited`).
+
 ## Dependencies
 `pyproject.toml` is the source of truth for dependencies (with `uv.lock` for locking).
 `requirements.txt` is generated for deployment and can be regenerated via `make reqs`.
