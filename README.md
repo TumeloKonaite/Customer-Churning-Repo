@@ -227,6 +227,8 @@ curl -X POST http://localhost:5001/api/predict \
 ## Deployment (AWS ECS Fargate)
 The demo deploys the container to **ECS Fargate** behind an **Application Load Balancer (ALB)**.
 
+![Architecture diagram](docs/architecture.png)
+
 - Container images are pushed to **ECR**
 - **ECS** runs the container in a managed Fargate service
 - **ALB** routes traffic and performs health checks on `/health`
