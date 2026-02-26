@@ -1,7 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime, timezone
+import json
+import os
 import re
+from typing import Any
+
+import pandas as pd
+
+from src.pipeline.prediction_pipeline import PredictPipeline
 
 REQUIRED_FIELDS = [
     "CreditScore",
@@ -32,6 +39,47 @@ MAX_BATCH_SIZE = 100
 
 _MISSING_FIELD_RE = re.compile(r"^Missing required field: (?P<field>.+)$")
 _NUMERIC_FIELD_RE = re.compile(r"^Field '(?P<field>[^']+)' must be a number")
+
+
+def _timestamp_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_model_metadata() -> dict[str, Any]:
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    metadata_path = os.path.join(project_root, "artifacts", "metadata.json")
+    default_metadata = {
+        "model_name": "churn_predictor",
+        "model_version": "1.0.0",
+    }
+
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as file:
+            raw = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return default_metadata
+
+    return {
+        "model_name": raw.get("model_name", default_metadata["model_name"]),
+        "model_version": raw.get("version", default_metadata["model_version"]),
+    }
+
+
+def _build_batch_envelope(
+    *,
+    status: str,
+    results: list[dict[str, Any]],
+    errors: list[dict[str, Any]] | None,
+    summary: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "results": results,
+        "errors": errors if errors else None,
+        "summary": summary,
+        "metadata": _load_model_metadata(),
+        "timestamp": _timestamp_now(),
+    }
 
 
 def validate_record(record: Any) -> tuple[bool, list[str], dict | None]:
@@ -94,3 +142,81 @@ def validate_batch(records: list[dict], mode: str) -> dict:
             break
 
     return result
+
+
+def predict_batch_records(records: Any, options: Any | None = None) -> dict[str, Any]:
+    """Validate and score a batch using one DataFrame build and one model call."""
+    if not isinstance(records, list):
+        raise ValueError("Field 'records' must be a list")
+    if len(records) > MAX_BATCH_SIZE:
+        raise ValueError(f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})")
+
+    if options is None:
+        options = {}
+    if not isinstance(options, dict):
+        raise ValueError("Field 'options' must be an object")
+
+    mode = options.get("mode", "fail_fast")
+    if mode not in VALID_BATCH_MODES:
+        raise ValueError("options.mode must be one of: fail_fast, partial")
+
+    validation_result = validate_batch(records, mode)
+    errors = validation_result["errors"]
+    valid_rows = validation_result["valid_rows"]
+    row_map = validation_result["row_map"]
+    invalid_row_count = len({error["row_index"] for error in errors})
+
+    summary = {
+        "total_records": len(records),
+        "valid_records": len(valid_rows),
+        "invalid_records": invalid_row_count,
+        "error_count": len(errors),
+        "mode": mode,
+    }
+
+    if mode == "fail_fast" and errors:
+        return _build_batch_envelope(
+            status="error",
+            results=[],
+            errors=errors,
+            summary=summary,
+        )
+
+    if not valid_rows:
+        status = "failed" if errors else "success"
+        return _build_batch_envelope(
+            status=status,
+            results=[],
+            errors=errors,
+            summary=summary,
+        )
+
+    batch_df = pd.DataFrame(valid_rows, columns=REQUIRED_FIELDS)
+    pipeline = PredictPipeline()
+    predicted_labels, probabilities = pipeline.predict(batch_df)
+
+    predicted_labels_list = list(predicted_labels)
+    probabilities_list = list(probabilities) if probabilities is not None else [None] * len(predicted_labels_list)
+
+    if len(predicted_labels_list) != len(valid_rows):
+        raise RuntimeError("PredictPipeline.predict returned unexpected number of labels")
+    if len(probabilities_list) != len(valid_rows):
+        raise RuntimeError("PredictPipeline.predict returned unexpected number of probabilities")
+
+    results = []
+    for valid_index, (label, p_churn) in enumerate(zip(predicted_labels_list, probabilities_list)):
+        results.append(
+            {
+                "index": int(row_map[valid_index]),
+                "predicted_label": int(label),
+                "p_churn": None if p_churn is None else float(p_churn),
+            }
+        )
+
+    status = "partial" if errors else "success"
+    return _build_batch_envelope(
+        status=status,
+        results=results,
+        errors=errors,
+        summary=summary,
+    )

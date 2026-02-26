@@ -12,10 +12,8 @@ from src.decisioning import (
 from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
 from src.services.prediction_service import (
     MAX_BATCH_SIZE,
-    NUMERIC_FIELDS,
-    REQUIRED_FIELDS,
     VALID_BATCH_MODES,
-    validate_batch,
+    predict_batch_records,
     validate_record,
 )
 
@@ -228,39 +226,27 @@ def predict_batch_api():
             }
         ), 400
 
-    validation_result = validate_batch(records, mode)
+    if not artifacts_ready():
+        return json_error(
+            "Model artifacts are not ready yet. Please wait for training to finish.",
+            status_code=503,
+        )
 
-    if mode == "fail_fast" and validation_result["errors"]:
+    try:
+        response_body = predict_batch_records(records, options)
+    except ValueError as exc:
         return jsonify(
             {
                 "status": "error",
-                "message": "Invalid batch payload",
+                "message": str(exc),
                 "contract_version": BATCH_CONTRACT_VERSION,
-                "mode": mode,
-                "errors": validation_result["errors"],
             }
         ), 400
+    except Exception as exc:
+        return json_error(f"Internal server error: {str(exc)}", status_code=500)
 
-    if mode == "partial" and validation_result["errors"]:
-        return jsonify(
-            {
-                "status": "partial",
-                "message": "Batch validation completed with row-level errors",
-                "contract_version": BATCH_CONTRACT_VERSION,
-                "mode": mode,
-                "valid_rows": validation_result["valid_rows"],
-                "errors": validation_result["errors"],
-                "row_map": validation_result["row_map"],
-            }
-        ), 200
-
-    return jsonify(
-        {
-            "status": "error",
-            "message": "Batch prediction not implemented yet",
-            "contract_version": BATCH_CONTRACT_VERSION,
-        }
-    ), 501
+    http_status = 400 if response_body.get("status") == "error" else 200
+    return jsonify(response_body), http_status
 
 
 # Home page
