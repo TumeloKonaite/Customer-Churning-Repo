@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>Batch Churn Prediction</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 24px;
+            color: #111827;
+        }
+
+        .page {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            margin-bottom: 18px;
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+
+        p {
+            line-height: 1.4;
+        }
+
+        .links a {
+            margin-right: 14px;
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 320px;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+
+        button {
+            margin-top: 12px;
+            padding: 10px 14px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 10px 12px;
+            border-radius: 6px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #e5e7eb;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f9fafb;
+        }
+
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #111827;
+            color: #f9fafb;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 10px;
+        }
+
+        .metric {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 10px;
+        }
+
+        .metric label {
+            display: block;
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <div class="card">
+            <h1>Batch Churn Prediction</h1>
+            <p>Submit a JSON batch payload to score multiple customers, compute decisioning outputs, and preview <strong>email candidates</strong> (candidates only, no emails are sent).</p>
+            <p class="links">
+                <a href="/">Home</a>
+                <a href="/predictdata">Single Prediction Form</a>
+            </p>
+            <p><strong>Max batch size:</strong> {{ max_batch_size }}</p>
+        </div>
+
+        <div class="card">
+            <h2>Batch Payload (JSON)</h2>
+            <form action="/predictbatch" method="post">
+                <textarea name="payload_json" spellcheck="false">{{ payload_json }}</textarea>
+                <button type="submit">Run Batch Prediction</button>
+            </form>
+        </div>
+
+        {% if error %}
+        <div class="card">
+            <h2>Request Error</h2>
+            <div class="error">{{ error }}</div>
+        </div>
+        {% endif %}
+
+        {% if response_body %}
+        <div class="card">
+            <h2>Batch Response</h2>
+            <p>
+                <span class="status">{{ response_body["status"] }}</span>
+                {% if response_status_code %}
+                <span>HTTP {{ response_status_code }}</span>
+                {% endif %}
+            </p>
+
+            {% if response_body["summary"] %}
+            <div class="grid">
+                <div class="metric"><label>Total Records</label>{{ response_body["summary"]["total_records"] }}</div>
+                <div class="metric"><label>Valid Records</label>{{ response_body["summary"]["valid_records"] }}</div>
+                <div class="metric"><label>Invalid Records</label>{{ response_body["summary"]["invalid_records"] }}</div>
+                <div class="metric"><label>Error Count</label>{{ response_body["summary"]["error_count"] }}</div>
+                <div class="metric"><label>Mode</label>{{ response_body["summary"]["mode"] }}</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3>Email Candidates (Not Sent)</h3>
+            {% if response_body["email_candidates"] %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Index</th>
+                        <th>ID</th>
+                        <th>p_churn</th>
+                        <th>Recommended Action</th>
+                        <th>Net Gain</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in response_body["email_candidates"] %}
+                    <tr>
+                        <td>{{ item["index"] }}</td>
+                        <td>{{ item["id"] }}</td>
+                        <td>{{ item["p_churn"] }}</td>
+                        <td>{{ item["recommended_action"] }}</td>
+                        <td>{{ item["net_gain"] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No email candidates selected for this batch.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3>Per-Record Results</h3>
+            {% if response_body["results"] %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Index</th>
+                        <th>ID</th>
+                        <th>Label</th>
+                        <th>p_churn</th>
+                        <th>CLV</th>
+                        <th>Recommended Action</th>
+                        <th>Net Gain</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in response_body["results"] %}
+                    <tr>
+                        <td>{{ item["index"] }}</td>
+                        <td>{{ item["id"] }}</td>
+                        <td>{{ item["predicted_label"] }}</td>
+                        <td>{{ item["p_churn"] }}</td>
+                        <td>{{ item["clv"] }}</td>
+                        <td>{{ item["recommended_action"] }}</td>
+                        <td>{{ item["net_gain"] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No valid scored records returned.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3>Validation / Processing Errors</h3>
+            {% if response_body["errors"] %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Row</th>
+                        <th>ID</th>
+                        <th>Field</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for err in response_body["errors"] %}
+                    <tr>
+                        <td>{{ err["row_index"] }}</td>
+                        <td>{{ err.get("id") }}</td>
+                        <td>{{ err.get("field") }}</td>
+                        <td>{{ err["message"] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p>No errors reported.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h3>Raw Response JSON</h3>
+            <pre>{{ response_body | tojson(indent=2) }}</pre>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

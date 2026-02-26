@@ -25,18 +25,35 @@
 
         a {
             display: inline-block;
-            margin-top: 16px;
+            margin-top: 12px;
             text-decoration: none;
             color: #007bff;
             font-weight: bold;
+        }
+
+        .links {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .note {
+            font-size: 13px;
+            color: #4b5563;
+            margin-top: 12px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Customer Churn Prediction</h1>
-        <p>Use the form to estimate churn risk for a customer.</p>
-        <a href="/predictdata">Go to Prediction Form</a>
+        <p>Use the app for single-customer predictions or batch scoring with decisioning outputs and email candidate preview.</p>
+        <div class="links">
+            <a href="/predictdata">Go to Single Prediction Form</a>
+            <a href="/predictbatch">Go to Batch Prediction (JSON)</a>
+        </div>
+        <div class="note">Batch email candidates are selected for review only. No emails are sent from the UI.</div>
     </div>
 </body>
 </html>
