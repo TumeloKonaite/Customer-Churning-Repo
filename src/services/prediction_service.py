@@ -8,6 +8,13 @@ from typing import Any
 
 import pandas as pd
 
+from src.decisioning import (
+    ACTION_COSTS,
+    ACTION_NONE,
+    estimate_clv,
+    expected_net_gain,
+    recommended_action,
+)
 from src.pipeline.prediction_pipeline import PredictPipeline
 
 REQUIRED_FIELDS = [
@@ -81,17 +88,147 @@ def _build_batch_envelope(
     *,
     status: str,
     results: list[dict[str, Any]],
+    email_candidates: list[dict[str, Any]] | None = None,
     errors: list[dict[str, Any]] | None,
     summary: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "status": status,
         "results": results,
+        "email_candidates": email_candidates or [],
         "errors": errors if errors else None,
         "summary": summary,
         "metadata": _load_model_metadata(),
         "timestamp": _timestamp_now(),
     }
+
+
+def _coerce_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _email_candidate_rules(options: dict[str, Any]) -> dict[str, Any]:
+    raw_rules = None
+    for key in (
+        "email_candidate_rules",
+        "email_selection",
+        "candidate_selection",
+        "email_candidates",
+    ):
+        candidate = options.get(key)
+        if isinstance(candidate, dict):
+            raw_rules = candidate
+            break
+
+    raw_rules = raw_rules or {}
+
+    allowed_actions = raw_rules.get("allowed_actions")
+    if isinstance(allowed_actions, list):
+        allowed_actions = {str(item) for item in allowed_actions}
+    else:
+        allowed_actions = None
+
+    return {
+        # Default: only outreach-worthy rows with positive expected value.
+        "exclude_no_action": bool(raw_rules.get("exclude_no_action", True)),
+        "min_p_churn": _coerce_optional_float(raw_rules.get("min_p_churn")),
+        "min_net_gain": _coerce_optional_float(raw_rules.get("min_net_gain")),
+        "max_candidates": _coerce_optional_int(raw_rules.get("max_candidates")),
+        "allowed_actions": allowed_actions,
+    }
+
+
+def _estimate_record_clv(record_features: dict[str, Any]) -> float | None:
+    try:
+        return float(estimate_clv(record_features))
+    except Exception:
+        return None
+
+
+def _post_process_result(
+    result: dict[str, Any],
+    *,
+    record_features: dict[str, Any],
+) -> dict[str, Any]:
+    processed = dict(result)
+    churn_probability = processed.get("p_churn")
+    clv = _estimate_record_clv(record_features)
+
+    action = None
+    net_gain = None
+    if churn_probability is not None:
+        action = recommended_action(float(churn_probability))
+        if clv is not None:
+            action_cost = float(ACTION_COSTS.get(action, 0.0))
+            net_gain = expected_net_gain(float(churn_probability), clv, action_cost)
+
+    processed["clv"] = clv
+    processed["recommended_action"] = action
+    processed["net_gain"] = net_gain
+    return processed
+
+
+def _select_email_candidates(
+    results: list[dict[str, Any]],
+    *,
+    options: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rules = _email_candidate_rules(options)
+    selected: list[dict[str, Any]] = []
+
+    for item in results:
+        p_churn = item.get("p_churn")
+        action = item.get("recommended_action")
+        net_gain = item.get("net_gain")
+
+        if p_churn is None or action is None or net_gain is None:
+            continue
+        if rules["exclude_no_action"] and action == ACTION_NONE:
+            continue
+
+        min_p_churn = rules["min_p_churn"]
+        if min_p_churn is not None and float(p_churn) < min_p_churn:
+            continue
+
+        min_net_gain = rules["min_net_gain"]
+        if min_net_gain is None:
+            min_net_gain = 0.0
+        if float(net_gain) < min_net_gain:
+            continue
+
+        allowed_actions = rules["allowed_actions"]
+        if allowed_actions is not None and action not in allowed_actions:
+            continue
+
+        selected.append(
+            {
+                "index": item.get("index"),
+                "id": item.get("id"),
+                "p_churn": float(p_churn),
+                "recommended_action": action,
+                "net_gain": float(net_gain),
+            }
+        )
+
+    max_candidates = rules["max_candidates"]
+    if max_candidates is not None and max_candidates >= 0:
+        return selected[:max_candidates]
+
+    return selected
 
 
 def validate_record(record: Any) -> tuple[bool, list[str], dict | None]:
@@ -195,6 +332,7 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         return _build_batch_envelope(
             status="error",
             results=[],
+            email_candidates=[],
             errors=errors,
             summary=summary,
         )
@@ -204,6 +342,7 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         return _build_batch_envelope(
             status=status,
             results=[],
+            email_candidates=[],
             errors=errors,
             summary=summary,
         )
@@ -222,19 +361,25 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
 
     results = []
     for valid_index, (label, p_churn) in enumerate(zip(predicted_labels_list, probabilities_list)):
+        raw_result = {
+            "index": int(row_map[valid_index]),
+            "id": row_ids.get(row_map[valid_index]),
+            "predicted_label": int(label),
+            "p_churn": None if p_churn is None else float(p_churn),
+        }
         results.append(
-            {
-                "index": int(row_map[valid_index]),
-                "id": row_ids.get(row_map[valid_index]),
-                "predicted_label": int(label),
-                "p_churn": None if p_churn is None else float(p_churn),
-            }
+            _post_process_result(
+                raw_result,
+                record_features=valid_rows[valid_index],
+            )
         )
 
+    email_candidates = _select_email_candidates(results, options=options)
     status = "partial" if errors else "success"
     return _build_batch_envelope(
         status=status,
         results=results,
+        email_candidates=email_candidates,
         errors=errors,
         summary=summary,
     )
