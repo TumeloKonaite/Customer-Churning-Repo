@@ -25,6 +25,44 @@ app = application
 # -----------------------------
 
 BATCH_CONTRACT_VERSION = "v1"
+BATCH_UI_SAMPLE_PAYLOAD = {
+    "records": [
+        {
+            "customer_id": "CUST_001",
+            "CreditScore": 619,
+            "Geography": "France",
+            "Gender": "Female",
+            "Age": 42,
+            "Tenure": 2,
+            "Balance": 0,
+            "NumOfProducts": 1,
+            "HasCrCard": 1,
+            "IsActiveMember": 1,
+            "EstimatedSalary": 101348.88,
+        },
+        {
+            "customer_id": "CUST_002",
+            "CreditScore": 700,
+            "Geography": "Germany",
+            "Gender": "Male",
+            "Age": 50,
+            "Tenure": 5,
+            "Balance": 120000,
+            "NumOfProducts": 2,
+            "HasCrCard": 1,
+            "IsActiveMember": 0,
+            "EstimatedSalary": 90000,
+        },
+    ],
+    "options": {
+        "mode": "partial",
+        "email_candidate_rules": {
+            "min_p_churn": 0.6,
+            "min_net_gain": 0,
+            "exclude_no_action": True,
+        },
+    },
+}
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
@@ -65,6 +103,10 @@ def validate_payload(data: dict):
 
 def artifacts_ready() -> bool:
     return all(os.path.exists(path) for path in REQUIRED_ARTIFACTS)
+
+
+def batch_ui_default_payload() -> str:
+    return json.dumps(BATCH_UI_SAMPLE_PAYLOAD, indent=2)
 
 
 # -----------------------------
@@ -247,6 +289,54 @@ def predict_batch_api():
 
     http_status = 400 if response_body.get("status") == "error" else 200
     return jsonify(response_body), http_status
+
+
+@app.route("/predictbatch", methods=["GET", "POST"])
+def predict_batch_form():
+    payload_json = batch_ui_default_payload()
+    response_body = None
+    response_status_code = None
+    error = None
+
+    if request.method == "POST":
+        payload_json = (request.form.get("payload_json") or "").strip()
+
+        if not payload_json:
+            error = "Please provide a JSON payload."
+        elif not artifacts_ready():
+            error = "Model artifacts are not ready yet. Please wait for training to finish."
+        else:
+            try:
+                body = json.loads(payload_json)
+            except json.JSONDecodeError as exc:
+                error = f"Invalid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})"
+            else:
+                if isinstance(body, list):
+                    body = {"records": body}
+
+                if not isinstance(body, dict):
+                    error = "JSON payload must be an object (or a list of records)."
+                elif "records" not in body:
+                    error = "Field 'records' is required."
+                else:
+                    try:
+                        options = body.get("options", {})
+                        response_body = predict_batch_records(body.get("records"), options)
+                        response_status_code = 400 if response_body.get("status") == "error" else 200
+                    except ValueError as exc:
+                        error = str(exc)
+                    except Exception as exc:
+                        app.logger.exception("Batch prediction form failed")
+                        error = f"Error processing batch request: {str(exc)}"
+
+    return render_template(
+        "batch.html",
+        payload_json=payload_json,
+        response_body=response_body,
+        response_status_code=response_status_code,
+        error=error,
+        max_batch_size=MAX_BATCH_SIZE,
+    )
 
 
 # Home page
