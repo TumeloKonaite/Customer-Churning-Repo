@@ -1,6 +1,7 @@
 import application
 import src.services.prediction_service as prediction_service
 from src.services.prediction_service import MAX_BATCH_SIZE
+from src.services.prediction_service import REQUIRED_FIELDS
 
 
 def valid_record():
@@ -179,3 +180,63 @@ def test_batch_partial_with_no_valid_rows_returns_failed_and_skips_model(monkeyp
     assert body["summary"]["total_records"] == 2
     assert body["summary"]["valid_records"] == 0
     assert body["summary"]["invalid_records"] == 2
+
+
+def test_batch_id_passthrough_results(monkeypatch):
+    patch_batch_execution(monkeypatch, labels=[1, 0], probabilities=[0.91, 0.08])
+    client = application.app.test_client()
+    first = valid_record()
+    first["customer_id"] = "cust-123"
+    second = valid_record()
+    second["row_id"] = 42
+    second["Age"] = 50
+    payload = {"records": [first, second], "options": {"mode": "partial"}}
+
+    response = client.post("/api/predict/batch", json=payload)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "success"
+    assert [item["id"] for item in body["results"]] == ["cust-123", 42]
+    assert [item["index"] for item in body["results"]] == [0, 1]
+
+
+def test_batch_id_passthrough_errors(monkeypatch):
+    patch_batch_execution(monkeypatch, labels=[], probabilities=[])
+    client = application.app.test_client()
+    invalid = valid_record()
+    invalid["customer_id"] = "cust-bad"
+    invalid.pop("Age")
+    payload = {"records": [invalid], "options": {"mode": "partial"}}
+
+    response = client.post("/api/predict/batch", json=payload)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "failed"
+    assert body["results"] == []
+    assert len(body["errors"]) == 1
+    assert body["errors"][0]["id"] == "cust-bad"
+    assert body["errors"][0]["row_index"] == 0
+    assert body["errors"][0]["field"] == "Age"
+
+
+def test_batch_df_excludes_id_fields(monkeypatch):
+    patch_batch_execution(monkeypatch, labels=[0, 1], probabilities=[0.12, 0.87])
+    client = application.app.test_client()
+    first = valid_record()
+    first["customer_id"] = "cust-1"
+    second = valid_record()
+    second["row_id"] = "row-2"
+    second["Age"] = 50
+    payload = {"records": [first, second], "options": {"mode": "partial"}}
+
+    response = client.post("/api/predict/batch", json=payload)
+
+    assert response.status_code == 200
+    assert FakePredictPipeline.call_count == 1
+    assert FakePredictPipeline.last_df is not None
+    assert "customer_id" not in FakePredictPipeline.last_df.columns
+    assert "row_id" not in FakePredictPipeline.last_df.columns
+    assert "id" not in FakePredictPipeline.last_df.columns
+    assert set(FakePredictPipeline.last_df.columns) == set(REQUIRED_FIELDS)
