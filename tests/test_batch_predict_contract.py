@@ -1,5 +1,6 @@
 import application
 import src.services.prediction_service as prediction_service
+from src.decisioning import ACTION_DISCOUNT_CALL
 from src.services.prediction_service import MAX_BATCH_SIZE
 from src.services.prediction_service import REQUIRED_FIELDS
 
@@ -88,11 +89,12 @@ def test_batch_mode_fail_fast_rejects_invalid(monkeypatch):
     body = response.get_json()
     assert body["status"] == "error"
     assert body["results"] == []
+    assert body["email_candidates"] == []
     assert len(body["errors"]) == 1
     assert body["errors"][0]["row_index"] == 1
     assert body["errors"][0]["field"] == "Age"
     assert body["errors"][0]["message"] == "Missing required field: Age"
-    assert set(body) == {"status", "results", "errors", "summary", "metadata", "timestamp"}
+    assert set(body) == {"status", "results", "email_candidates", "errors", "summary", "metadata", "timestamp"}
     assert FakePredictPipeline.call_count == 0
     assert body["summary"]["mode"] == "fail_fast"
     assert body["metadata"]["model_version"] == "test-version"
@@ -115,7 +117,7 @@ def test_batch_mode_partial_predicts_once_and_maps_indices(monkeypatch):
     assert response.status_code == 200
     body = response.get_json()
     assert body["status"] == "partial"
-    assert set(body) == {"status", "results", "errors", "summary", "metadata", "timestamp"}
+    assert set(body) == {"status", "results", "email_candidates", "errors", "summary", "metadata", "timestamp"}
     assert FakePredictPipeline.call_count == 1
     assert list(FakePredictPipeline.last_df.index) == [0, 1]
     assert len(FakePredictPipeline.last_df) == 2
@@ -123,6 +125,13 @@ def test_batch_mode_partial_predicts_once_and_maps_indices(monkeypatch):
     assert [item["index"] for item in body["results"]] == [0, 2]
     assert [item["predicted_label"] for item in body["results"]] == [1, 0]
     assert [item["p_churn"] for item in body["results"]] == [0.91, 0.08]
+    assert all("clv" in item for item in body["results"])
+    assert all("recommended_action" in item for item in body["results"])
+    assert all("net_gain" in item for item in body["results"])
+    assert len(body["email_candidates"]) == 1
+    assert body["email_candidates"][0]["index"] == 0
+    assert body["email_candidates"][0]["p_churn"] == 0.91
+    assert body["email_candidates"][0]["recommended_action"] == ACTION_DISCOUNT_CALL
     assert len(body["errors"]) == 1
     assert [err["row_index"] for err in body["errors"]] == [1]
     assert body["errors"][0]["field"] == "Age"
@@ -148,8 +157,11 @@ def test_batch_all_valid_default_mode_predicts_once(monkeypatch):
     body = response.get_json()
     assert body["status"] == "success"
     assert body["errors"] is None
+    assert len(body["email_candidates"]) == 1
+    assert body["email_candidates"][0]["index"] == 1
+    assert body["email_candidates"][0]["p_churn"] == 0.87
     assert [item["index"] for item in body["results"]] == [0, 1]
-    assert set(body) == {"status", "results", "errors", "summary", "metadata", "timestamp"}
+    assert set(body) == {"status", "results", "email_candidates", "errors", "summary", "metadata", "timestamp"}
     assert FakePredictPipeline.call_count == 1
     assert body["summary"]["mode"] == "fail_fast"
     assert body["summary"]["valid_records"] == 2
@@ -174,6 +186,7 @@ def test_batch_partial_with_no_valid_rows_returns_failed_and_skips_model(monkeyp
     body = response.get_json()
     assert body["status"] == "failed"
     assert body["results"] == []
+    assert body["email_candidates"] == []
     assert FakePredictPipeline.call_count == 0
     assert len(body["errors"]) == 2
     assert [err["row_index"] for err in body["errors"]] == [0, 1]
@@ -199,6 +212,7 @@ def test_batch_id_passthrough_results(monkeypatch):
     assert body["status"] == "success"
     assert [item["id"] for item in body["results"]] == ["cust-123", 42]
     assert [item["index"] for item in body["results"]] == [0, 1]
+    assert body["email_candidates"][0]["id"] == "cust-123"
 
 
 def test_batch_id_passthrough_errors(monkeypatch):
@@ -215,6 +229,7 @@ def test_batch_id_passthrough_errors(monkeypatch):
     body = response.get_json()
     assert body["status"] == "failed"
     assert body["results"] == []
+    assert body["email_candidates"] == []
     assert len(body["errors"]) == 1
     assert body["errors"][0]["id"] == "cust-bad"
     assert body["errors"][0]["row_index"] == 0
@@ -240,3 +255,27 @@ def test_batch_df_excludes_id_fields(monkeypatch):
     assert "row_id" not in FakePredictPipeline.last_df.columns
     assert "id" not in FakePredictPipeline.last_df.columns
     assert set(FakePredictPipeline.last_df.columns) == set(REQUIRED_FIELDS)
+
+
+def test_batch_post_processing_is_null_safe_and_excludes_none_probability_from_candidates(monkeypatch):
+    patch_batch_execution(monkeypatch, labels=[1, 1], probabilities=[None, 0.75])
+    client = application.app.test_client()
+    first = valid_record()
+    first["customer_id"] = "cust-none-proba"
+    second = valid_record()
+    second["customer_id"] = "cust-keep"
+    second["Age"] = 55
+    payload = {"records": [first, second], "options": {"mode": "partial"}}
+
+    response = client.post("/api/predict/batch", json=payload)
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "success"
+    assert len(body["results"]) == 2
+    assert body["results"][0]["p_churn"] is None
+    assert body["results"][0]["recommended_action"] is None
+    assert body["results"][0]["net_gain"] is None
+    assert body["results"][0]["clv"] is not None
+    assert [item["id"] for item in body["email_candidates"]] == ["cust-keep"]
+    assert body["email_candidates"][0]["recommended_action"] == ACTION_DISCOUNT_CALL
