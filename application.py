@@ -10,6 +10,14 @@ from src.decisioning import (
     recommended_action,
 )
 from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
+from src.services.prediction_service import (
+    MAX_BATCH_SIZE,
+    NUMERIC_FIELDS,
+    REQUIRED_FIELDS,
+    VALID_BATCH_MODES,
+    validate_batch,
+    validate_record,
+)
 
 application = Flask(__name__)
 app = application
@@ -18,29 +26,7 @@ app = application
 # Helpers
 # -----------------------------
 
-REQUIRED_FIELDS = [
-    "CreditScore",
-    "Geography",
-    "Gender",
-    "Age",
-    "Tenure",
-    "Balance",
-    "NumOfProducts",
-    "HasCrCard",
-    "IsActiveMember",
-    "EstimatedSalary",
-]
-
-NUMERIC_FIELDS = {
-    "CreditScore": float,
-    "Age": float,
-    "Tenure": float,
-    "Balance": float,
-    "NumOfProducts": float,
-    "HasCrCard": float,
-    "IsActiveMember": float,
-    "EstimatedSalary": float,
-}
+BATCH_CONTRACT_VERSION = "v1"
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
@@ -75,22 +61,8 @@ def json_error(message: str, status_code: int = 400, errors=None):
 
 def validate_payload(data: dict):
     """Validate required fields and numeric coercion with useful error messages."""
-    missing = [k for k in REQUIRED_FIELDS if k not in data or data.get(k) in (None, "")]
-    if missing:
-        return False, [f"Missing required field: {k}" for k in missing]
-
-    # Validate numeric fields can be cast
-    cast_errors = []
-    for k, caster in NUMERIC_FIELDS.items():
-        try:
-            caster(data.get(k))
-        except Exception:
-            cast_errors.append(f"Field '{k}' must be a number (got {data.get(k)!r})")
-
-    if cast_errors:
-        return False, cast_errors
-
-    return True, None
+    ok, errors, _ = validate_record(data)
+    return ok, (errors or None)
 
 
 def artifacts_ready() -> bool:
@@ -192,6 +164,103 @@ def predict_api():
     except Exception as e:
         # If something unexpected happens (model load, pipeline error, etc.)
         return json_error(f"Internal server error: {str(e)}", status_code=500)
+
+
+@app.route("/api/predict/batch", methods=["POST"])
+def predict_batch_api():
+    if not request.is_json:
+        return json_error(
+            "Content-Type must be application/json",
+            status_code=415,
+        )
+
+    body = request.get_json(silent=True)
+    if body is None:
+        return json_error("Invalid JSON body", status_code=400)
+    if not isinstance(body, dict):
+        return json_error("JSON body must be an object", status_code=400)
+
+    if "records" not in body:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Field 'records' is required and must be a list",
+                "contract_version": BATCH_CONTRACT_VERSION,
+            }
+        ), 400
+
+    records = body.get("records")
+    if not isinstance(records, list):
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Field 'records' must be a list",
+                "contract_version": BATCH_CONTRACT_VERSION,
+            }
+        ), 400
+
+    if len(records) > MAX_BATCH_SIZE:
+        return jsonify(
+            {
+                "status": "error",
+                "message": f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})",
+                "contract_version": BATCH_CONTRACT_VERSION,
+            }
+        ), 413
+
+    options = body.get("options", {})
+    if not isinstance(options, dict):
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Field 'options' must be an object",
+                "contract_version": BATCH_CONTRACT_VERSION,
+            }
+        ), 400
+
+    mode = options.get("mode", "fail_fast")
+    if mode not in VALID_BATCH_MODES:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "options.mode must be one of: fail_fast, partial",
+                "contract_version": BATCH_CONTRACT_VERSION,
+            }
+        ), 400
+
+    validation_result = validate_batch(records, mode)
+
+    if mode == "fail_fast" and validation_result["errors"]:
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Invalid batch payload",
+                "contract_version": BATCH_CONTRACT_VERSION,
+                "mode": mode,
+                "errors": validation_result["errors"],
+            }
+        ), 400
+
+    if mode == "partial" and validation_result["errors"]:
+        return jsonify(
+            {
+                "status": "partial",
+                "message": "Batch validation completed with row-level errors",
+                "contract_version": BATCH_CONTRACT_VERSION,
+                "mode": mode,
+                "valid_rows": validation_result["valid_rows"],
+                "errors": validation_result["errors"],
+                "row_map": validation_result["row_map"],
+            }
+        ), 200
+
+    return jsonify(
+        {
+            "status": "error",
+            "message": "Batch prediction not implemented yet",
+            "contract_version": BATCH_CONTRACT_VERSION,
+        }
+    ), 501
 
 
 # Home page
