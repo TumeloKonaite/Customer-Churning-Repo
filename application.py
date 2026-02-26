@@ -166,9 +166,12 @@ def predict_api():
                 "EstimatedSalary": float(data["EstimatedSalary"]),
             }
         )
-        action = recommended_action(churn_probability)
-        action_cost = float(ACTION_COSTS.get(action, 0.0))
-        net_gain = expected_net_gain(churn_probability, clv, action_cost)
+        action = None
+        net_gain = None
+        if churn_probability is not None:
+            action = recommended_action(churn_probability)
+            action_cost = float(ACTION_COSTS.get(action, 0.0))
+            net_gain = expected_net_gain(churn_probability, clv, action_cost)
 
         metadata = load_metadata()
 
