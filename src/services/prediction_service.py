@@ -65,6 +65,18 @@ def _load_model_metadata() -> dict[str, Any]:
     }
 
 
+def _extract_record_id(record: Any) -> Any | None:
+    """Return passthrough identifier without affecting model inputs."""
+    if not isinstance(record, dict):
+        return None
+
+    if "customer_id" in record and record["customer_id"] is not None:
+        return record["customer_id"]
+    if "row_id" in record and record["row_id"] is not None:
+        return record["row_id"]
+    return None
+
+
 def _build_batch_envelope(
     *,
     status: str,
@@ -91,11 +103,11 @@ def validate_record(record: Any) -> tuple[bool, list[str], dict | None]:
     if missing:
         return False, [f"Missing required field: {k}" for k in missing], None
 
-    coerced_record = dict(record)
+    coerced_record = {field: record.get(field) for field in REQUIRED_FIELDS}
     cast_errors = []
     for key, caster in NUMERIC_FIELDS.items():
         try:
-            coerced_record[key] = caster(record.get(key))
+            coerced_record[key] = caster(coerced_record[key])
         except Exception:
             cast_errors.append(f"Field '{key}' must be a number (got {record.get(key)!r})")
 
@@ -113,9 +125,12 @@ def validate_batch(records: list[dict], mode: str) -> dict:
         "valid_rows": [],
         "errors": [],
         "row_map": {},
+        "row_ids": {},
     }
 
     for row_index, record in enumerate(records):
+        record_id = _extract_record_id(record)
+        result["row_ids"][row_index] = record_id
         ok, errors, coerced_record = validate_record(record)
         if ok:
             valid_index = len(result["valid_rows"])
@@ -126,6 +141,7 @@ def validate_batch(records: list[dict], mode: str) -> dict:
         for error_message in errors:
             error_item = {
                 "row_index": row_index,
+                "id": record_id,
                 "message": error_message,
             }
 
@@ -164,6 +180,7 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
     errors = validation_result["errors"]
     valid_rows = validation_result["valid_rows"]
     row_map = validation_result["row_map"]
+    row_ids = validation_result["row_ids"]
     invalid_row_count = len({error["row_index"] for error in errors})
 
     summary = {
@@ -208,6 +225,7 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         results.append(
             {
                 "index": int(row_map[valid_index]),
+                "id": row_ids.get(row_map[valid_index]),
                 "predicted_label": int(label),
                 "p_churn": None if p_churn is None else float(p_churn),
             }
