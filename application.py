@@ -87,6 +87,50 @@ DEFAULT_OUTREACH_MAX_EMAILS = 50
 DEFAULT_OUTREACH_DRY_RUN = True
 DEFAULT_OUTREACH_TONE = "serious"
 VALID_OUTREACH_TONES = {"serious", "witty", "concise"}
+OUTREACH_UI_SAMPLE_PAYLOAD = {
+    "contract_version": OUTREACH_CONTRACT_VERSION,
+    "records": [
+        {
+            "customer_id": "CUST_001",
+            "email": "one@example.com",
+            "CreditScore": 619,
+            "Geography": "France",
+            "Gender": "Female",
+            "Age": 42,
+            "Tenure": 2,
+            "Balance": 0,
+            "NumOfProducts": 1,
+            "HasCrCard": 1,
+            "IsActiveMember": 1,
+            "EstimatedSalary": 101348.88,
+        },
+        {
+            "customer_id": "CUST_002",
+            "email": "two@example.com",
+            "CreditScore": 700,
+            "Geography": "Germany",
+            "Gender": "Male",
+            "Age": 50,
+            "Tenure": 5,
+            "Balance": 120000,
+            "NumOfProducts": 2,
+            "HasCrCard": 1,
+            "IsActiveMember": 0,
+            "EstimatedSalary": 90000,
+        },
+    ],
+    "outreach_options": {
+        "threshold": DEFAULT_OUTREACH_THRESHOLD,
+        "max_emails": 2,
+        "dry_run": True,
+        "tone": DEFAULT_OUTREACH_TONE,
+    },
+    "context": {
+        "company_name": "Example Co",
+        "from_name": "Retention Team",
+        "from_email": "retention@example.com",
+    },
+}
 
 REQUIRED_ARTIFACTS = [
     os.path.join(ARTIFACTS_DIR, "schema.json"),
@@ -142,6 +186,24 @@ def batch_ui_default_payload() -> str:
 
 def batch_ui_default_options() -> str:
     return BATCH_UI_SAMPLE_CSV_OPTIONS
+
+
+def outreach_ui_default_payload() -> str:
+    return json.dumps(OUTREACH_UI_SAMPLE_PAYLOAD, indent=2)
+
+
+def parse_outreach_request_json(request_json_raw: str):
+    if request_json_raw is None or not str(request_json_raw).strip():
+        raise ValueError("Outreach request JSON is required")
+
+    try:
+        body = json.loads(request_json_raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid request JSON: {exc.msg}") from exc
+
+    if not isinstance(body, dict):
+        raise ValueError("Outreach request JSON must be an object")
+    return body
 
 
 def parse_batch_options_json(options_raw: str):
@@ -572,6 +634,241 @@ def _parse_outreach_request(body):
     return parsed, errors
 
 
+def execute_outreach_request(body):
+    parsed, validation_errors = _parse_outreach_request(body)
+    if parsed is None:
+        summary = _outreach_summary(
+            n_records=0,
+            n_valid=0,
+            n_invalid=0,
+            n_selected=0,
+            threshold=DEFAULT_OUTREACH_THRESHOLD,
+            max_emails=DEFAULT_OUTREACH_MAX_EMAILS,
+            dry_run=DEFAULT_OUTREACH_DRY_RUN,
+        )
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=validation_errors,
+        )
+        return response_body, 400
+
+    n_records = len(parsed["records"])
+    summary = _outreach_summary(
+        n_records=n_records,
+        n_valid=0,
+        n_invalid=n_records,
+        n_selected=0,
+        threshold=parsed["threshold"],
+        max_emails=parsed["max_emails"],
+        dry_run=parsed["dry_run"],
+    )
+    if validation_errors:
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=validation_errors,
+        )
+        status_code = 413 if any("MAX_BATCH_SIZE" in error.get("message", "") for error in validation_errors) else 400
+        return response_body, status_code
+
+    if not artifacts_ready():
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=[
+                {
+                    "stage": "predict",
+                    "message": "Model artifacts are not ready yet. Please wait for training to finish.",
+                }
+            ],
+        )
+        return response_body, 503
+
+    errors = []
+    try:
+        batch_response = predict_batch_records(parsed["records"], {"mode": "partial"})
+    except ValueError as exc:
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=[{"stage": "predict", "message": str(exc)}],
+        )
+        return response_body, 400
+    except Exception as exc:
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=[{"stage": "predict", "message": f"Internal server error: {str(exc)}"}],
+        )
+        return response_body, 500
+
+    results = batch_response.get("results")
+    if not isinstance(results, list):
+        response_body = _outreach_envelope(
+            status="error",
+            summary=summary,
+            errors=[
+                {
+                    "stage": "predict",
+                    "message": "Batch response is missing a valid 'results' list",
+                }
+            ],
+        )
+        return response_body, 500
+
+    batch_summary = batch_response.get("summary") if isinstance(batch_response.get("summary"), dict) else {}
+    n_valid = int(batch_summary.get("valid_records", len(results)))
+    n_invalid = int(batch_summary.get("invalid_records", max(0, n_records - n_valid)))
+
+    raw_batch_errors = batch_response.get("errors")
+    if isinstance(raw_batch_errors, list):
+        for item in raw_batch_errors:
+            errors.append({"stage": "batch_validation", "detail": item})
+    elif raw_batch_errors is not None:
+        errors.append({"stage": "batch_validation", "detail": raw_batch_errors})
+
+    selected, target_errors = _select_outreach_recipients(
+        batch_results=results,
+        records=parsed["records"],
+        threshold=parsed["threshold"],
+        max_emails=parsed["max_emails"],
+    )
+    errors.extend(target_errors)
+
+    drafted_selected = []
+    writer = _writer_for_tone(parsed["tone"])
+    writer_context = {
+        "company_name": parsed["company_name"],
+        "from_name": parsed["from_name"],
+        "from_email": parsed["from_email"],
+    }
+    for recipient in selected:
+        prompt = _build_outreach_prompt(
+            tone=parsed["tone"],
+            company_name=parsed["company_name"],
+            from_name=parsed["from_name"],
+            recipient_id=str(recipient["id"]),
+            recipient_email=str(recipient["email"]),
+            p_churn=float(recipient["p_churn"]),
+        )
+        try:
+            body_text = str(writer(prompt=prompt, context=writer_context)).strip()
+            if not body_text:
+                raise ValueError("writer returned an empty draft")
+            subject = str(outreach_subject_tool(body_text)).strip()
+            if not subject:
+                subject = f"{parsed['company_name']} check-in"
+        except Exception as exc:
+            errors.append(
+                {
+                    "stage": "draft",
+                    "id": recipient["id"],
+                    "email": recipient["email"],
+                    "message": str(exc),
+                }
+            )
+            continue
+
+        drafted_selected.append(
+            {
+                "id": recipient["id"],
+                "index": recipient["index"],
+                "email": recipient["email"],
+                "p_churn": recipient["p_churn"],
+                "draft": {
+                    "subject": subject,
+                    "body_text": body_text,
+                },
+            }
+        )
+
+    send_report = _outreach_send_block()
+    if not parsed["dry_run"] and drafted_selected:
+        if not _sendgrid_ready():
+            errors.append(
+                {
+                    "stage": "send",
+                    "message": "SENDGRID_API_KEY is required when dry_run is false",
+                }
+            )
+        else:
+            send_report["attempted"] = True
+            sent_count = 0
+            send_results = []
+            for recipient in drafted_selected:
+                try:
+                    send_result = send_email_text(
+                        subject=recipient["draft"]["subject"],
+                        body_text=recipient["draft"]["body_text"],
+                        to_emails=[recipient["email"]],
+                        from_email=parsed["from_email"],
+                    )
+                    sent_ok = _send_result_ok(send_result)
+                    if sent_ok:
+                        sent_count += 1
+                    else:
+                        errors.append(
+                            {
+                                "stage": "send",
+                                "id": recipient["id"],
+                                "email": recipient["email"],
+                                "message": "Email provider reported a failed send attempt",
+                            }
+                        )
+                    send_results.append(
+                        {
+                            "id": recipient["id"],
+                            "email": recipient["email"],
+                            "ok": sent_ok,
+                            "result": send_result,
+                        }
+                    )
+                except Exception as exc:
+                    errors.append(
+                        {
+                            "stage": "send",
+                            "id": recipient["id"],
+                            "email": recipient["email"],
+                            "message": str(exc),
+                        }
+                    )
+                    send_results.append(
+                        {
+                            "id": recipient["id"],
+                            "email": recipient["email"],
+                            "ok": False,
+                            "error": str(exc),
+                        }
+                    )
+
+            send_report["sent"] = sent_count
+            send_report["results"] = send_results
+
+    summary = _outreach_summary(
+        n_records=n_records,
+        n_valid=n_valid,
+        n_invalid=n_invalid,
+        n_selected=len(drafted_selected),
+        threshold=parsed["threshold"],
+        max_emails=parsed["max_emails"],
+        dry_run=parsed["dry_run"],
+    )
+    status = "ok"
+    if errors:
+        status = "partial" if n_valid > 0 else "error"
+
+    response_body = _outreach_envelope(
+        status=status,
+        summary=summary,
+        selected=drafted_selected,
+        send=send_report,
+        errors=errors,
+    )
+    status_code = 200 if status != "error" else 400
+    return response_body, status_code
+
+
 # -----------------------------
 # Routes
 # -----------------------------
@@ -757,237 +1054,7 @@ def outreach_api():
         )
         return jsonify(response_body), 400
 
-    parsed, validation_errors = _parse_outreach_request(body)
-    if parsed is None:
-        summary = _outreach_summary(
-            n_records=0,
-            n_valid=0,
-            n_invalid=0,
-            n_selected=0,
-            threshold=DEFAULT_OUTREACH_THRESHOLD,
-            max_emails=DEFAULT_OUTREACH_MAX_EMAILS,
-            dry_run=DEFAULT_OUTREACH_DRY_RUN,
-        )
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=validation_errors,
-        )
-        return jsonify(response_body), 400
-
-    n_records = len(parsed["records"])
-    summary = _outreach_summary(
-        n_records=n_records,
-        n_valid=0,
-        n_invalid=n_records,
-        n_selected=0,
-        threshold=parsed["threshold"],
-        max_emails=parsed["max_emails"],
-        dry_run=parsed["dry_run"],
-    )
-    if validation_errors:
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=validation_errors,
-        )
-        status_code = 413 if any("MAX_BATCH_SIZE" in error.get("message", "") for error in validation_errors) else 400
-        return jsonify(response_body), status_code
-
-    if not artifacts_ready():
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=[
-                {
-                    "stage": "predict",
-                    "message": "Model artifacts are not ready yet. Please wait for training to finish.",
-                }
-            ],
-        )
-        return jsonify(response_body), 503
-
-    errors = []
-    try:
-        batch_response = predict_batch_records(parsed["records"], {"mode": "partial"})
-    except ValueError as exc:
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=[{"stage": "predict", "message": str(exc)}],
-        )
-        return jsonify(response_body), 400
-    except Exception as exc:
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=[{"stage": "predict", "message": f"Internal server error: {str(exc)}"}],
-        )
-        return jsonify(response_body), 500
-
-    results = batch_response.get("results")
-    if not isinstance(results, list):
-        response_body = _outreach_envelope(
-            status="error",
-            summary=summary,
-            errors=[
-                {
-                    "stage": "predict",
-                    "message": "Batch response is missing a valid 'results' list",
-                }
-            ],
-        )
-        return jsonify(response_body), 500
-
-    batch_summary = batch_response.get("summary") if isinstance(batch_response.get("summary"), dict) else {}
-    n_valid = int(batch_summary.get("valid_records", len(results)))
-    n_invalid = int(batch_summary.get("invalid_records", max(0, n_records - n_valid)))
-
-    raw_batch_errors = batch_response.get("errors")
-    if isinstance(raw_batch_errors, list):
-        for item in raw_batch_errors:
-            errors.append({"stage": "batch_validation", "detail": item})
-    elif raw_batch_errors is not None:
-        errors.append({"stage": "batch_validation", "detail": raw_batch_errors})
-
-    selected, target_errors = _select_outreach_recipients(
-        batch_results=results,
-        records=parsed["records"],
-        threshold=parsed["threshold"],
-        max_emails=parsed["max_emails"],
-    )
-    errors.extend(target_errors)
-
-    drafted_selected = []
-    writer = _writer_for_tone(parsed["tone"])
-    writer_context = {
-        "company_name": parsed["company_name"],
-        "from_name": parsed["from_name"],
-        "from_email": parsed["from_email"],
-    }
-    for recipient in selected:
-        prompt = _build_outreach_prompt(
-            tone=parsed["tone"],
-            company_name=parsed["company_name"],
-            from_name=parsed["from_name"],
-            recipient_id=str(recipient["id"]),
-            recipient_email=str(recipient["email"]),
-            p_churn=float(recipient["p_churn"]),
-        )
-        try:
-            body_text = str(writer(prompt=prompt, context=writer_context)).strip()
-            if not body_text:
-                raise ValueError("writer returned an empty draft")
-            subject = str(outreach_subject_tool(body_text)).strip()
-            if not subject:
-                subject = f"{parsed['company_name']} check-in"
-        except Exception as exc:
-            errors.append(
-                {
-                    "stage": "draft",
-                    "id": recipient["id"],
-                    "email": recipient["email"],
-                    "message": str(exc),
-                }
-            )
-            continue
-
-        drafted_selected.append(
-            {
-                "id": recipient["id"],
-                "index": recipient["index"],
-                "email": recipient["email"],
-                "p_churn": recipient["p_churn"],
-                "draft": {
-                    "subject": subject,
-                    "body_text": body_text,
-                },
-            }
-        )
-
-    send_report = _outreach_send_block()
-    if not parsed["dry_run"] and drafted_selected:
-        if not _sendgrid_ready():
-            errors.append(
-                {
-                    "stage": "send",
-                    "message": "SENDGRID_API_KEY is required when dry_run is false",
-                }
-            )
-        else:
-            send_report["attempted"] = True
-            sent_count = 0
-            send_results = []
-            for recipient in drafted_selected:
-                try:
-                    send_result = send_email_text(
-                        subject=recipient["draft"]["subject"],
-                        body_text=recipient["draft"]["body_text"],
-                        to_emails=[recipient["email"]],
-                        from_email=parsed["from_email"],
-                    )
-                    sent_ok = _send_result_ok(send_result)
-                    if sent_ok:
-                        sent_count += 1
-                    else:
-                        errors.append(
-                            {
-                                "stage": "send",
-                                "id": recipient["id"],
-                                "email": recipient["email"],
-                                "message": "Email provider reported a failed send attempt",
-                            }
-                        )
-                    send_results.append(
-                        {
-                            "id": recipient["id"],
-                            "email": recipient["email"],
-                            "ok": sent_ok,
-                            "result": send_result,
-                        }
-                    )
-                except Exception as exc:
-                    errors.append(
-                        {
-                            "stage": "send",
-                            "id": recipient["id"],
-                            "email": recipient["email"],
-                            "message": str(exc),
-                        }
-                    )
-                    send_results.append(
-                        {
-                            "id": recipient["id"],
-                            "email": recipient["email"],
-                            "ok": False,
-                            "error": str(exc),
-                        }
-                    )
-
-            send_report["sent"] = sent_count
-            send_report["results"] = send_results
-
-    summary = _outreach_summary(
-        n_records=n_records,
-        n_valid=n_valid,
-        n_invalid=n_invalid,
-        n_selected=len(drafted_selected),
-        threshold=parsed["threshold"],
-        max_emails=parsed["max_emails"],
-        dry_run=parsed["dry_run"],
-    )
-    status = "ok"
-    if errors:
-        status = "partial" if n_valid > 0 else "error"
-
-    response_body = _outreach_envelope(
-        status=status,
-        summary=summary,
-        selected=drafted_selected,
-        send=send_report,
-        errors=errors,
-    )
-    status_code = 200 if status != "error" else 400
+    response_body, status_code = execute_outreach_request(body)
     return jsonify(response_body), status_code
 
 
@@ -1031,6 +1098,40 @@ def predict_batch_form():
         max_batch_size=MAX_BATCH_SIZE,
         input_method=input_method,
         uploaded_filename=uploaded_filename,
+    )
+
+
+@app.route("/outreach", methods=["GET", "POST"])
+def outreach_form():
+    outreach_request_json = outreach_ui_default_payload()
+    response_body = None
+    response_status_code = None
+    error = None
+
+    if request.method == "POST":
+        outreach_request_json = (request.form.get("outreach_request_json") or "").strip()
+        try:
+            body = parse_outreach_request_json(outreach_request_json)
+            response_body, response_status_code = execute_outreach_request(body)
+        except ValueError as exc:
+            error = str(exc)
+        except Exception as exc:
+            app.logger.exception("Outreach form failed")
+            error = f"Error processing outreach request: {str(exc)}"
+            response_status_code = 500
+
+    return render_template(
+        "outreach.html",
+        outreach_request_json=outreach_request_json,
+        response_body=response_body,
+        response_status_code=response_status_code,
+        error=error,
+        max_batch_size=MAX_BATCH_SIZE,
+        max_emails_per_request=MAX_EMAILS_PER_REQUEST,
+        default_threshold=DEFAULT_OUTREACH_THRESHOLD,
+        default_tone=DEFAULT_OUTREACH_TONE,
+        default_dry_run=DEFAULT_OUTREACH_DRY_RUN,
+        valid_tones=sorted(VALID_OUTREACH_TONES),
     )
 
 
