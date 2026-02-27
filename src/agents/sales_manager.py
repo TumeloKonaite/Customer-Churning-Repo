@@ -9,7 +9,11 @@ except Exception:
     def function_tool(func):
         return func
 
-from src.agents.email_manager import emailer_agent
+from src.agents.email_manager import (
+    emailer_agent,
+    html_tool as email_html_tool,
+    subject_tool as email_subject_tool,
+)
 from src.agents.picker import pick_best_sales_email
 from src.agents.retention_writers import (
     write_retention_email_concise,
@@ -25,6 +29,7 @@ STRICT_INSTRUCTION = (
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _SUBJECT_PREFIX_RE = re.compile(r"^\s*subject\s*:", re.IGNORECASE)
+_VALID_SEND_MODES = {"send", "dry_run"}
 
 
 def _sanitize_plain_text_body(text: str) -> str:
@@ -61,6 +66,18 @@ def _require_recipients(recipients: list[str]) -> list[str]:
             raise ValueError(f"'recipients[{i}]' must be a non-empty string")
         normalized.append(recipient.strip())
     return normalized
+
+
+def _normalize_send_mode(send_mode: str | None) -> str:
+    if send_mode is None:
+        return "send"
+    if not isinstance(send_mode, str) or not send_mode.strip():
+        raise ValueError("'send_mode' must be a non-empty string when provided")
+
+    normalized_mode = send_mode.strip().lower()
+    if normalized_mode not in _VALID_SEND_MODES:
+        raise ValueError("'send_mode' must be one of: send, dry_run")
+    return normalized_mode
 
 
 def _merge_context(
@@ -108,6 +125,40 @@ def _generate_drafts(message_prompt: str, writer_context: dict[str, Any] | None)
     return drafts
 
 
+def _build_dry_run_handoff(
+    *,
+    selected_draft: str,
+    recipients: list[str],
+    context: dict[str, Any] | None,
+) -> dict[str, Any]:
+    subject = _require_non_empty_str(
+        email_subject_tool(
+            body_text=selected_draft,
+            recipients=recipients,
+            context=context,
+        ),
+        "subject",
+    )
+    html = _require_non_empty_str(
+        email_html_tool(
+            subject=subject,
+            body_text=selected_draft,
+            recipients=recipients,
+            context=context,
+        ),
+        "html",
+    )
+    return {
+        "status": "dry_run",
+        "subject": subject,
+        "html": html,
+        "recipients": list(recipients),
+        "send_status": "skipped",
+        "send_result": None,
+        "errors": [],
+    }
+
+
 @function_tool
 def sales_manager(
     message_prompt: str,
@@ -117,9 +168,11 @@ def sales_manager(
     from_name: str | None = None,
     from_email: str | None = None,
     metadata: dict[str, Any] | None = None,
+    send_mode: str | None = None,
 ) -> dict[str, Any]:
     prompt_text = _require_non_empty_str(message_prompt, "message_prompt")
     recipient_list = _require_recipients(recipients)
+    normalized_send_mode = _normalize_send_mode(send_mode)
     writer_context = _merge_context(
         context,
         company_name=company_name,
@@ -144,6 +197,7 @@ def sales_manager(
     except Exception as exc:
         return {
             "status": "error",
+            "send_mode": normalized_send_mode,
             "selected_draft": selected_draft,
             "drafts": {
                 "serious": draft_serious,
@@ -153,6 +207,42 @@ def sales_manager(
             "recipients": recipient_list,
             "handoff_result": None,
             "errors": [str(exc)],
+        }
+
+    if normalized_send_mode == "dry_run":
+        try:
+            handoff_result = _build_dry_run_handoff(
+                selected_draft=selected_draft,
+                recipients=recipient_list,
+                context=writer_context,
+            )
+        except Exception as exc:
+            return {
+                "status": "error",
+                "send_mode": normalized_send_mode,
+                "selected_draft": selected_draft,
+                "drafts": {
+                    "serious": draft_serious,
+                    "witty": draft_witty,
+                    "concise": draft_concise,
+                },
+                "recipients": recipient_list,
+                "handoff_result": None,
+                "errors": [str(exc)],
+            }
+
+        return {
+            "status": "dry_run",
+            "send_mode": normalized_send_mode,
+            "selected_draft": selected_draft,
+            "drafts": {
+                "serious": draft_serious,
+                "witty": draft_witty,
+                "concise": draft_concise,
+            },
+            "recipients": recipient_list,
+            "handoff_result": handoff_result,
+            "errors": [],
         }
 
     try:
@@ -167,6 +257,7 @@ def sales_manager(
     except Exception as exc:
         return {
             "status": "error",
+            "send_mode": normalized_send_mode,
             "selected_draft": selected_draft,
             "drafts": {
                 "serious": draft_serious,
@@ -184,6 +275,7 @@ def sales_manager(
 
     return {
         "status": str(handoff_status or "sent"),
+        "send_mode": normalized_send_mode,
         "selected_draft": selected_draft,
         "drafts": {
             "serious": draft_serious,
