@@ -3,6 +3,8 @@ from datetime import datetime
 import json
 import os
 
+import pandas as pd
+
 from src.decisioning import (
     ACTION_COSTS,
     estimate_clv,
@@ -12,6 +14,7 @@ from src.decisioning import (
 from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
 from src.services.prediction_service import (
     MAX_BATCH_SIZE,
+    REQUIRED_FIELDS,
     VALID_BATCH_MODES,
     predict_batch_records,
     validate_record,
@@ -63,6 +66,7 @@ BATCH_UI_SAMPLE_PAYLOAD = {
         },
     },
 }
+BATCH_UI_SAMPLE_CSV_OPTIONS = json.dumps(BATCH_UI_SAMPLE_PAYLOAD["options"], indent=2)
 
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
 ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
@@ -95,6 +99,16 @@ def json_error(message: str, status_code: int = 400, errors=None):
     return jsonify(payload), status_code
 
 
+def batch_contract_error(message: str, status_code: int = 400):
+    return jsonify(
+        {
+            "status": "error",
+            "message": message,
+            "contract_version": BATCH_CONTRACT_VERSION,
+        }
+    ), status_code
+
+
 def validate_payload(data: dict):
     """Validate required fields and numeric coercion with useful error messages."""
     ok, errors, _ = validate_record(data)
@@ -107,6 +121,80 @@ def artifacts_ready() -> bool:
 
 def batch_ui_default_payload() -> str:
     return json.dumps(BATCH_UI_SAMPLE_PAYLOAD, indent=2)
+
+
+def batch_ui_default_options() -> str:
+    return BATCH_UI_SAMPLE_CSV_OPTIONS
+
+
+def parse_batch_options_json(options_raw: str):
+    if options_raw is None or not str(options_raw).strip():
+        return {}
+
+    try:
+        options = json.loads(options_raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid options JSON: {exc.msg}") from exc
+
+    if not isinstance(options, dict):
+        raise ValueError("Field 'options' must be an object")
+    return options
+
+
+def parse_csv_upload_records(uploaded_file):
+    if uploaded_file is None:
+        raise ValueError("Field 'file' is required")
+
+    filename = (uploaded_file.filename or "").strip()
+    if not filename:
+        raise ValueError("Uploaded filename must not be empty")
+    if not filename.lower().endswith(".csv"):
+        raise ValueError("Uploaded file must be a .csv")
+
+    try:
+        df = pd.read_csv(uploaded_file.stream)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError(f"CSV could not be parsed: {str(exc)}") from exc
+
+    df = df.dropna(how="all")
+    if df.empty:
+        raise ValueError("CSV must contain at least one data row")
+
+    missing_columns = [field for field in REQUIRED_FIELDS if field not in df.columns]
+    if missing_columns:
+        missing_list = ", ".join(missing_columns)
+        raise ValueError(f"CSV is missing required columns: {missing_list}")
+
+    records = df.to_dict(orient="records")
+    if len(records) > MAX_BATCH_SIZE:
+        raise OverflowError(f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})")
+
+    return records
+
+
+def execute_batch_prediction(records, options):
+    mode = options.get("mode", "fail_fast")
+    if mode not in VALID_BATCH_MODES:
+        return batch_contract_error(
+            "options.mode must be one of: fail_fast, partial",
+            status_code=400,
+        )
+
+    if not artifacts_ready():
+        return json_error(
+            "Model artifacts are not ready yet. Please wait for training to finish.",
+            status_code=503,
+        )
+
+    try:
+        response_body = predict_batch_records(records, options)
+    except ValueError as exc:
+        return batch_contract_error(str(exc), status_code=400)
+    except Exception as exc:
+        return json_error(f"Internal server error: {str(exc)}", status_code=500)
+
+    http_status = 400 if response_body.get("status") == "error" else 200
+    return jsonify(response_body), http_status
 
 
 # -----------------------------
@@ -207,6 +295,7 @@ def predict_api():
 
 
 @app.route("/api/predict/batch", methods=["POST"])
+@app.route("/api/batch_predict", methods=["POST"])
 def predict_batch_api():
     if not request.is_json:
         return json_error(
@@ -221,121 +310,81 @@ def predict_batch_api():
         return json_error("JSON body must be an object", status_code=400)
 
     if "records" not in body:
-        return jsonify(
-            {
-                "status": "error",
-                "message": "Field 'records' is required and must be a list",
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 400
+        return batch_contract_error(
+            "Field 'records' is required and must be a list",
+            status_code=400,
+        )
 
     records = body.get("records")
     if not isinstance(records, list):
-        return jsonify(
-            {
-                "status": "error",
-                "message": "Field 'records' must be a list",
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 400
+        return batch_contract_error("Field 'records' must be a list", status_code=400)
 
     if len(records) > MAX_BATCH_SIZE:
-        return jsonify(
-            {
-                "status": "error",
-                "message": f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})",
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 413
+        return batch_contract_error(
+            f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})",
+            status_code=413,
+        )
 
     options = body.get("options", {})
     if not isinstance(options, dict):
-        return jsonify(
-            {
-                "status": "error",
-                "message": "Field 'options' must be an object",
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 400
+        return batch_contract_error("Field 'options' must be an object", status_code=400)
 
-    mode = options.get("mode", "fail_fast")
-    if mode not in VALID_BATCH_MODES:
-        return jsonify(
-            {
-                "status": "error",
-                "message": "options.mode must be one of: fail_fast, partial",
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 400
+    return execute_batch_prediction(records, options)
 
-    if not artifacts_ready():
-        return json_error(
-            "Model artifacts are not ready yet. Please wait for training to finish.",
-            status_code=503,
-        )
 
+@app.route("/api/batch_predict_csv", methods=["POST"])
+def predict_batch_csv_api():
     try:
-        response_body = predict_batch_records(records, options)
+        options = parse_batch_options_json(request.form.get("options", ""))
+        records = parse_csv_upload_records(request.files.get("file"))
+    except OverflowError as exc:
+        return batch_contract_error(str(exc), status_code=413)
     except ValueError as exc:
-        return jsonify(
-            {
-                "status": "error",
-                "message": str(exc),
-                "contract_version": BATCH_CONTRACT_VERSION,
-            }
-        ), 400
-    except Exception as exc:
-        return json_error(f"Internal server error: {str(exc)}", status_code=500)
+        return batch_contract_error(str(exc), status_code=400)
 
-    http_status = 400 if response_body.get("status") == "error" else 200
-    return jsonify(response_body), http_status
+    return execute_batch_prediction(records, options)
 
 
 @app.route("/predictbatch", methods=["GET", "POST"])
 def predict_batch_form():
-    payload_json = batch_ui_default_payload()
+    csv_options_json = batch_ui_default_options()
     response_body = None
     response_status_code = None
     error = None
+    input_method = "csv"
+    uploaded_filename = None
 
     if request.method == "POST":
-        payload_json = (request.form.get("payload_json") or "").strip()
+        csv_options_json = (request.form.get("csv_options_json") or "").strip()
+        uploaded = request.files.get("csv_file")
+        uploaded_filename = (uploaded.filename or "").strip() if uploaded else None
 
-        if not payload_json:
-            error = "Please provide a JSON payload."
-        elif not artifacts_ready():
+        if not artifacts_ready():
             error = "Model artifacts are not ready yet. Please wait for training to finish."
         else:
             try:
-                body = json.loads(payload_json)
-            except json.JSONDecodeError as exc:
-                error = f"Invalid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})"
-            else:
-                if isinstance(body, list):
-                    body = {"records": body}
-
-                if not isinstance(body, dict):
-                    error = "JSON payload must be an object (or a list of records)."
-                elif "records" not in body:
-                    error = "Field 'records' is required."
-                else:
-                    try:
-                        options = body.get("options", {})
-                        response_body = predict_batch_records(body.get("records"), options)
-                        response_status_code = 400 if response_body.get("status") == "error" else 200
-                    except ValueError as exc:
-                        error = str(exc)
-                    except Exception as exc:
-                        app.logger.exception("Batch prediction form failed")
-                        error = f"Error processing batch request: {str(exc)}"
+                options = parse_batch_options_json(csv_options_json)
+                records = parse_csv_upload_records(uploaded)
+                response_body = predict_batch_records(records, options)
+                response_status_code = 400 if response_body.get("status") == "error" else 200
+            except OverflowError as exc:
+                error = str(exc)
+                response_status_code = 413
+            except ValueError as exc:
+                error = str(exc)
+            except Exception as exc:
+                app.logger.exception("Batch prediction CSV form failed")
+                error = f"Error processing CSV batch request: {str(exc)}"
 
     return render_template(
         "batch.html",
-        payload_json=payload_json,
+        csv_options_json=csv_options_json,
         response_body=response_body,
         response_status_code=response_status_code,
         error=error,
         max_batch_size=MAX_BATCH_SIZE,
+        input_method=input_method,
+        uploaded_filename=uploaded_filename,
     )
 
 
