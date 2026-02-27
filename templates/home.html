@@ -59,11 +59,28 @@
         button:hover {
             background-color: #0056b3;
         }
+
+        .links {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .links a {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: bold;
+            margin: 0 6px;
+        }
     </style>
 </head>
 <body>
     <div class="login">
         <h1>Customer Churn Prediction</h1>
+        <div class="links">
+            <a href="/">Home</a>
+            <a href="/predictbatch">Batch Prediction (JSON)</a>
+            <a href="/outreach">Outreach Pipeline</a>
+        </div>
 
         <form action="/predictdata" method="post">
             
@@ -151,6 +168,12 @@
             <label>Churn Probability:</label>
             <div>{{ (churn_probability * 100) | round(2) }}%</div>
         </div>
+        {% if clv is not none %}
+        <div class="form-group">
+            <label>Estimated CLV (Proxy):</label>
+            <div>${{ clv | round(2) }}</div>
+        </div>
+        {% endif %}
         <div class="form-group">
             <label>Recommended Retention Action:</label>
             <div>{{ action }}</div>
