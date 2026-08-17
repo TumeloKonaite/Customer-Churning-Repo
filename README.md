@@ -1,412 +1,203 @@
-# Customer Churn Prediction Web App
+# Customer Churn Prediction
 
-[![CI](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml/badge.svg)](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Development Status](https://img.shields.io/badge/Status-Active-success.svg)](#development-status)
-[![Git Workflow](https://img.shields.io/badge/GitHub-Flow-blue.svg)](https://docs.github.com/en/get-started/quickstart/github-flow)
-[![Docker Ready](https://img.shields.io/badge/Docker-Ready-blue.svg)](#docker-quick-start)
-
-**Live Demo:** http://customer-churn-alb-1775269208.us-east-1.elb.amazonaws.com
-
-## Overview
-This Flask web application predicts customer churn using a scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
-
-Training is notebook-independent via a pipeline and a CLI-style entrypoint. It saves model artifacts and metadata (including evaluation metrics and feature schema) under `artifacts/`. Real artifacts are generated via training or CI builds; the repo only keeps small example files for documentation.
+This repository has one responsibility: train and serve a customer churn model. It supports local Python execution and Modal production deployment.
 
 ## Features
-- User-friendly input form for customer data
-- Real-time churn prediction
-- Actionable output (high risk vs. low risk)
-- Preprocessing + model bundled into a single pipeline artifact
-- Docker support for easy deployment (exposes port 5001)
 
-## Retention Decisioning (ROI Layer)
-The app includes a lightweight, deterministic decision engine that turns churn probability into a recommended retention action and a simple ROI proxy. It estimates CLV using a balance and tenure-based heuristic, assigns actions using fixed probability thresholds, and computes expected net gain as:
+- model training and artifact generation
+- single-customer churn prediction through JSON or the web form
+- batch churn prediction through JSON or CSV
+- per-record batch validation with `fail_fast` and `partial` modes
+- model health and metadata reporting
+- Modal deployment with build-time model training
 
-```
-net_gain = (p_churn * clv) - action_cost
-```
+Prediction responses contain model outputs only. The application does not make retention decisions, calculate ROI, generate outreach, or send email.
 
-All assumptions and thresholds are documented in `src/decisioning.py`.
+## Setup
 
-### ROI Example Table
-The table below uses the same formulas and action costs defined in `src/decisioning.py`.
+Python 3.12 or newer is required.
 
-| Scenario | p_churn | Balance | Tenure | EstimatedSalary | CLV (proxy) | Action | Action Cost | Expected Net Gain |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| Low risk | 0.20 | 10,000 | 5 | 50,000 | 13,000 | No action | 0 | 2,600 |
-| Medium risk | 0.45 | 2,500 | 2 | 60,000 | 5,300 | Retention email | 5 | 2,380 |
-| High risk | 0.75 | 15,000 | 8 | 80,000 | 19,000 | Discount or retention call | 50 | 14,200 |
-
-## Live Demo
-![Live demo screenshot](docs/demo-ecs.png)
-
-This demo shows the full flow:
-- user enters customer attributes
-- submits the form
-- receives a churn prediction with confidence score and guidance
-
-## Quickstart
-
-### 1. Set up a virtual environment
-Choose **one** option:
-
-**Option A: using uv (recommended)**
-```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
-
-**Option B: using Python venv**
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-### 2. Run common workflows
+On Windows, activate the environment with `.venv\Scripts\activate`.
+
+## Train and run locally
+
+`application.py` is the sole local Flask entrypoint.
+
 ```bash
-make train   # train model and save to artifacts/
-make run     # start the web app locally
-make test    # run tests
-make reqs    # regenerate requirements.txt from pyproject.toml
-```
-
-Canonical app entrypoint: `application.py` (with `main.py` as a thin shim).
-
-**Windows PowerShell (no make installed)**
-```powershell
 python -m src.train
 python application.py
-python -m pytest
 ```
 
-### 3. Open the app
-Visit: http://localhost:5001
+The application listens on `http://localhost:5001` by default. Set `PORT` or `FLASK_DEBUG=1` when needed.
 
-## Model Training
-- Entrypoint: `src/train.py` (runs the pipeline and writes `artifacts/metadata.json`)
-- Pipeline: `src/pipeline/training_pipeline.py`
-- Output artifacts:
-  - `artifacts/model.pkl`
-  - `artifacts/metadata.json`
-  - `artifacts/schema.json`
-  - `artifacts/feature_columns.json`
-  
-**Note:** Large binary artifacts are not committed. Example files for docs live in:
-- `artifacts/sample_metadata.json`
-- `artifacts/schema.example.json`
+Equivalent Make targets are available:
 
-## Model Performance
-Metrics below are pulled from the latest `artifacts/metadata.json` run.
-
-| Metric | Value |
-| --- | ---: |
-| ROC-AUC | 0.8697 |
-| F1 | 0.6070 |
-| Precision | 0.7937 |
-| Recall | 0.4914 |
-
-Dataset split: 80/20 train/test (stratified on `Exited`).
-
-## Dependencies
-`pyproject.toml` is the source of truth for dependencies (with `uv.lock` for locking).
-`requirements.txt` is generated for deployment and can be regenerated via `make reqs`.
-
-## Docker Quick Start
-
-### Using Docker Compose (Recommended)
 ```bash
-docker-compose up --build
+make train
+make run
+make test
 ```
 
-### Using Docker Directly
+Training reads `dataset/Churn_Modelling.csv` and writes the model, preprocessing objects, schema, metrics, and metadata under `artifacts/`.
+
+## Web UI
+
+- `/` — navigation
+- `/predictdata` — single-customer prediction form
+- `/predictbatch` — CSV batch upload and prediction results
+
+The UI displays only the predicted churn/stay label, churn probability, and validation or model errors.
+
+## HTTP API
+
+### Health
+
 ```bash
-# Build the image
-docker build -t churn-predictor .
-
-# Optional: pre-train during build to avoid startup delays
-# docker build --build-arg RUN_TRAINING=1 -t churn-predictor .
-
-# Run the container
-docker run -p 5001:5001 churn-predictor
+curl http://localhost:5001/health
 ```
 
-Visit http://localhost:5001 to access the application.
+The response reports service health, artifact readiness in `model_loaded`, and model metadata.
 
-### Smoke Test
-```bash
-# macOS / Linux
-BASE_URL=http://localhost:5001 make smoke
-```
+### Single prediction
 
-```powershell
-# Windows PowerShell
-$env:BASE_URL="http://localhost:5001"
-make smoke
-```
-
-## API Contract
-
-### Health Check
-`GET /health`
-
-**200 OK**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-02-01T12:34:56.789012",
-  "model_loaded": true,
-  "metadata": {
-    "training_date": "2026-02-01T09:15:00",
-    "model_name": "churn_predictor",
-    "version": "1.0.0"
-  }
-}
-```
-
-### Predict
-`POST /api/predict` (Content-Type: application/json)
-
-**Request body**
-```json
-{
-  "CreditScore": 650,
-  "Geography": "France",
-  "Gender": "Male",
-  "Age": 40,
-  "Tenure": 3,
-  "Balance": 60000,
-  "NumOfProducts": 2,
-  "HasCrCard": 1,
-  "IsActiveMember": 1,
-  "EstimatedSalary": 50000
-}
-```
-
-**200 OK**
-```json
-{
-  "status": "success",
-  "p_churn": 0.42,
-  "predicted_label": 1,
-  "clv": 67500.0,
-  "recommended_action": "Retention email",
-  "net_gain": 28345.0,
-  "model_name": "churn_predictor",
-  "model_version": "1.0.0",
-  "timestamp": "2026-02-01T12:34:56.789012"
-}
-```
-
-**Errors**
-- `400 Bad Request`: missing or invalid fields (see `errors` array)
-- `415 Unsupported Media Type`: Content-Type is not `application/json`
-- `503 Service Unavailable`: model artifacts not ready
-
-### Curl Example
 ```bash
 curl -X POST http://localhost:5001/api/predict \
-  -H "Content-Type: application/json" \
+  -H 'Content-Type: application/json' \
   -d '{
-    "CreditScore": 650,
+    "CreditScore": 619,
     "Geography": "France",
-    "Gender": "Male",
-    "Age": 40,
-    "Tenure": 3,
-    "Balance": 60000,
-    "NumOfProducts": 2,
+    "Gender": "Female",
+    "Age": 42,
+    "Tenure": 2,
+    "Balance": 0,
+    "NumOfProducts": 1,
     "HasCrCard": 1,
     "IsActiveMember": 1,
-    "EstimatedSalary": 50000
+    "EstimatedSalary": 101348.88
   }'
 ```
 
-## Deployment (AWS ECS Fargate)
-The demo deploys the container to **ECS Fargate** behind an **Application Load Balancer (ALB)**.
+Successful response shape:
 
-![Architecture diagram](docs/architecture.png)
-
-- Container images are pushed to **ECR**
-- **ECS** runs the container in a managed Fargate service
-- **ALB** routes traffic and performs health checks on `/health`
-- Logs stream to **CloudWatch Logs**
-- Model artifacts are baked into the image during CI (`RUN_TRAINING=1`) so ECS starts deterministically
-
-CI/CD is handled by GitHub Actions: on push to `main`, the workflow builds the image,
-pushes to ECR, and forces a new ECS deployment.
-Terraform files live in `infra/`.
-
-### Artifacts + Auto-Training
-The app requires model artifacts under `artifacts/` (`schema.json`, `preprocessor.pkl`, `encoder.pkl`, etc.).
-If these files are missing, the container will auto-train on startup by default.
-
-- Control this behavior with `AUTO_TRAIN`:
-  - `AUTO_TRAIN=1` (default): train if artifacts are missing
-  - `AUTO_TRAIN=0`: skip training (prediction will fail if artifacts are absent)
-
-By default, training runs in the background so the server can start quickly. You can
-control this with `AUTO_TRAIN_ASYNC`:
-- `AUTO_TRAIN_ASYNC=1` (default): train in background
-- `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
-
-You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
-If a volume is mounted, the container will restore artifacts from an internal
-image cache on first start to avoid re-training.
-
-For compatibility with some external smoke tests, the container can also
-forward port 5000 to the app port via `ENABLE_PORT_5000=1` (default).
-Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
-
-## Deployment (Modal)
-
-Modal provides a separate deployment path for the existing Flask WSGI application. It does
-not replace or modify the Docker/ECS deployment.
-
-Install the Modal CLI and authenticate your local machine:
-
-```bash
-python -m pip install modal
-modal setup
+```json
+{
+  "status": "success",
+  "predicted_label": 1,
+  "p_churn": 0.82,
+  "model_name": "churn_predictor",
+  "model_version": "1.0.0",
+  "timestamp": "2026-08-17T12:00:00+00:00"
+}
 ```
 
-Start an ephemeral development deployment (the command prints its URL):
+`p_churn` is `null` when the trained estimator does not provide probabilities.
+
+### JSON batch prediction
+
+POST to `/api/predict/batch` (or `/api/batch_predict`) with a `records` list and an optional mode:
+
+```json
+{
+  "records": [
+    {
+      "customer_id": "CUST_001",
+      "CreditScore": 619,
+      "Geography": "France",
+      "Gender": "Female",
+      "Age": 42,
+      "Tenure": 2,
+      "Balance": 0,
+      "NumOfProducts": 1,
+      "HasCrCard": 1,
+      "IsActiveMember": 1,
+      "EstimatedSalary": 101348.88
+    }
+  ],
+  "options": {"mode": "partial"}
+}
+```
+
+Each successful result contains exactly `index`, `id`, `predicted_label`, and `p_churn`. The envelope also contains validation errors, a summary, model metadata, and a timestamp. `fail_fast` stops validation at the first invalid record; `partial` scores every valid record and returns row-level errors for invalid records.
+
+### CSV batch prediction
+
+```bash
+curl -X POST http://localhost:5001/api/batch_predict_csv \
+  -F 'file=@customers.csv' \
+  -F 'options={"mode":"partial"}'
+```
+
+CSV files require the ten model fields shown above. `customer_id`, `row_id`, or `id` may be included for response passthrough. The maximum batch size is 100.
+
+## Smoke tests
+
+The cross-platform smoke scripts validate `/health` and `/api/predict` against a local or Modal URL.
+
+```bash
+BASE_URL=http://localhost:5001 ./scripts/smoke.sh
+```
+
+```powershell
+./scripts/smoke.ps1 -BaseUrl "https://your-modal-url"
+```
+
+## Modal deployment
+
+Modal is the only production deployment target. Authenticate the Modal CLI, then serve a development deployment or deploy to production:
 
 ```bash
 modal serve modal_app.py
-# or: make modal-serve
-```
-
-Deploy the named `customer-churn-backend` app:
-
-```bash
 modal deploy modal_app.py
-# or: make modal-deploy
 ```
 
-Modal prints the generated endpoint after deployment. Its URL has this form:
+The Modal image installs `requirements.txt`, copies the application, trains the model during image construction, and serves the Flask WSGI app. Runtime scaling and timeout settings are defined in `modal_app.py`.
+
+GitHub deployment runs on pushes to `main` and manual dispatch. Configure these repository secrets:
+
+- `MODAL_TOKEN_ID`
+- `MODAL_TOKEN_SECRET`
+
+## Dependencies
+
+`pyproject.toml` is the dependency source of truth. `requirements.txt` and `uv.lock` are generated from it. Visualization libraries are isolated in the optional `notebook` extra and are not installed in the production Modal image.
+
+```bash
+uv lock
+uv export --no-dev --no-emit-project --no-annotate --no-header -o requirements.txt
+```
+
+For notebook exploration:
+
+```bash
+python -m pip install -e '.[notebook]'
+```
+
+## Project layout
 
 ```text
-https://<workspace>--customer-churn-backend-flask-app.modal.run
+application.py             Local Flask entrypoint and HTTP/UI routes
+modal_app.py               Modal image build and WSGI deployment
+src/train.py               Training command and metadata generation
+src/components/            Data ingestion, transformation, and model training
+src/pipeline/               Training and prediction pipelines
+src/services/              Batch validation and prediction service
+templates/                 Prediction-only web UI
+scripts/smoke.sh           POSIX smoke test
+scripts/smoke.ps1          PowerShell smoke test
+tests/                      API, batch, metrics, and training tests
+notebooks/                  Optional exploratory analysis
 ```
 
-Current production endpoint:
+## Model limitations
 
-```text
-https://tumelokonaitedev--customer-churn-backend-flask-app.modal.run
-```
-
-The image build copies the application, `src/`, `templates/`, and `dataset/`, then runs
-`python -m src.train`. Consequently, the model artifacts are baked into the image before
-production traffic arrives; training does not happen on the first request.
-
-### Optional SendGrid secret
-
-No SendGrid secret is required to deploy the UI, prediction endpoints, batch endpoint, or
-`/api/outreach` with `"dry_run": true`. To allow `"dry_run": false`, create a Modal secret
-containing both supported environment variables, then opt into attaching it while serving or
-deploying:
-
-```bash
-modal secret create customer-churn-sendgrid \
-  SENDGRID_API_KEY="$SENDGRID_API_KEY" \
-  SENDGRID_VERIFIED_SENDER="$SENDGRID_VERIFIED_SENDER"
-
-MODAL_SENDGRID_SECRET_NAME=customer-churn-sendgrid modal deploy modal_app.py
-```
-
-The environment variables above must be populated in your shell; never place their values in
-the repository. For an email-enabled GitHub Actions deployment, set the repository variable
-`MODAL_SENDGRID_SECRET_NAME` to `customer-churn-sendgrid`. The workflow passes that non-secret
-name to Modal; leave it unset for dry-run-only outreach.
-
-### Validate the deployment
-
-Run the existing smoke tests against the URL printed by Modal:
-
-```bash
-BASE_URL=https://<workspace>--customer-churn-backend-flask-app.modal.run make smoke
-```
-
-You can also inspect the health endpoint directly:
-
-```bash
-curl -i https://<workspace>--customer-churn-backend-flask-app.modal.run/health
-```
-
-The service scales to zero while idle. The first request after an idle period may therefore
-have cold-start latency.
-
-The workflow at `.github/workflows/deploy-modal.yml` deploys on pushes to `main` and manual
-dispatches only; it never deploys from pull requests. Repository administrators must create a
-Modal token and store its values as the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` GitHub Actions
-secrets before that workflow can succeed.
-
-## Project Structure
-```
-Customer-Churning-Repo/
-+- .github/
-�  +- workflows/
-�     +- ci.yml
-+- application.py
-+- artifacts/
-+- dataset/
-�  +- Churn_Modelling.csv
-+- docs/
-�  +- demo-placeholder.svg
-+- logs/
-+- notebooks/
-�  +- Churning problem using multiple Classification Models.ipynb
-+- src/
-�  +- components/
-�  +- metrics.py
-�  +- pipeline/
-�  +- decisioning.py
-�  +- train.py
-�  +- utils.py
-+- templates/
-+- tests/
-�  +- test_decisioning.py
-�  +- test_metrics.py
-�  +- test_training_metadata.py
-+- pyproject.toml
-+- requirements.txt
-+- Makefile
-+- README.md
-```
-
-## Development Status
-Active
-
-## Model Card
-### Model Details
-- Model type: scikit-learn binary classifier in a preprocessing pipeline
-- Task: predict customer churn (1 = churn, 0 = stay)
-- Output: class label plus churn probability
-
-### Intended Use
-- Support retention workflows by flagging high-risk customers
-- Provide a lightweight ROI proxy via the decisioning layer
-
-### Data
-- Training data: `dataset/Churn_Modelling.csv`
-- Features: numeric and categorical customer attributes used in the UI and API
-
-### Metrics
-- Metrics are stored in `artifacts/metadata.json` after training
-- Evaluation utilities in `src/metrics.py`
-
-### Limitations
-- The ROI layer is a heuristic, not a causal estimate
-- Model performance can drift as customer behavior changes
-- Not intended for automated adverse decisions without review
-
-## Contributing
-1. Create a feature branch
-2. Commit changes
-3. Open a pull request
+The model is trained on the included bank churn dataset. Its quality depends on the representativeness and freshness of that data. Predictions should be monitored for drift and evaluated for fairness before use in consequential workflows.
 
 ## License
-MIT � see `LICENSE`.
+
+See [LICENSE](LICENSE).

@@ -1,9 +1,21 @@
 [project]
 name = "customer-churning-repo"
 version = "0.1.0"
-description = "Add your description here"
+description = "Train and serve a customer churn prediction model"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pytest>=9.0.2",
+    "flask",
+    "modal",
+    "numpy",
+    "pandas",
+    "pytest",
+    "scikit-learn",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "matplotlib",
+    "plotly",
+    "seaborn",
 ]

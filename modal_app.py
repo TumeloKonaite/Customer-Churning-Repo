@@ -1,6 +1,5 @@
 """Modal deployment entrypoint for the customer churn Flask application."""
 
-import os
 from pathlib import Path
 
 import modal
@@ -8,8 +7,6 @@ import modal
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 APP_NAME = "customer-churn-backend"
-SENDGRID_SECRET_ENV = "MODAL_SENDGRID_SECRET_NAME"
-
 app = modal.App(APP_NAME)
 
 # copy=True is required because training runs in a later image-build layer.
@@ -46,10 +43,6 @@ image = (
             "logs/**",
             "artifacts",
             "artifacts/**",
-            "infra/.terraform",
-            "infra/.terraform/**",
-            "infra/*.tfstate",
-            "infra/*.tfstate.*",
             "*.log",
         ],
     )
@@ -58,23 +51,8 @@ image = (
 )
 
 
-def _function_secrets() -> list[modal.Secret]:
-    """Attach SendGrid only when a deploy explicitly opts into real email."""
-    secret_name = os.getenv(SENDGRID_SECRET_ENV, "").strip()
-    if not secret_name:
-        return []
-
-    return [
-        modal.Secret.from_name(
-            secret_name,
-            required_keys=["SENDGRID_API_KEY", "SENDGRID_VERIFIED_SENDER"],
-        )
-    ]
-
-
 @app.function(
     image=image,
-    secrets=_function_secrets(),
     timeout=600,
     min_containers=0,
     scaledown_window=300,
