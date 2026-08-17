@@ -8,7 +8,7 @@ else
 SMOKE_CMD = sh scripts/smoke.sh
 endif
 
-.PHONY: run train test smoke clean docker-* install lint reqs
+.PHONY: run train test smoke clean docker-* install lint reqs modal-serve modal-deploy
 
 # Development commands
 install:
@@ -28,6 +28,13 @@ reqs:
 
 smoke:
 	$(SMOKE_CMD)
+
+# Modal deployment commands
+modal-serve:
+	modal serve modal_app.py
+
+modal-deploy:
+	modal deploy modal_app.py
 
 lint:
 	$(PYTHON) -m flake8 .
