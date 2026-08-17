@@ -192,12 +192,17 @@ python -m pip install -e '.[notebook]'
 ## Project layout
 
 ```text
-application.py             FastAPI app, Pydantic contracts, and HTTP/UI routes
+application.py             Minimal ASGI and local-development entrypoint
 modal_app.py               Modal image build and ASGI deployment
 src/train.py               Training command and metadata generation
+src/api/                   FastAPI app factory, routers, errors, and OpenAPI setup
+src/schemas/               Endpoint-specific Pydantic API contracts
 src/components/            Data ingestion, transformation, and model training
 src/pipeline/               Training and prediction pipelines
-src/services/              Batch validation and prediction service
+src/services/              Health, artifact, validation, ingestion, and prediction logic
+  single_prediction_service.py  Single-customer inference orchestration
+  batch_prediction_service.py   JSON/CSV batch inference orchestration
+  prediction_validation.py      Shared record validation and coercion
 templates/                 Prediction-only web UI
 scripts/smoke.sh           POSIX smoke test
 scripts/smoke.ps1          PowerShell smoke test

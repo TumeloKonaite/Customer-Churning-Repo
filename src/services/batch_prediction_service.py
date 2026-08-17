@@ -1,32 +1,28 @@
+"""JSON and CSV batch-prediction orchestration."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-import os
+import logging
 import re
-from typing import Any
+from typing import Any, BinaryIO
 
 import pandas as pd
 
 from src.pipeline.prediction_pipeline import PredictPipeline
+from src.schemas.batch_prediction import MAX_BATCH_SIZE, VALID_BATCH_MODES
+from src.schemas.prediction import REQUIRED_FIELDS
+from src.services import model_service
+from src.services.exceptions import (
+    APIServiceError,
+    BatchContractViolation,
+    PredictionExecutionError,
+)
+from src.services.prediction_validation import validate_record
 
-REQUIRED_FIELDS = [
-    "CreditScore", "Geography", "Gender", "Age", "Tenure", "Balance",
-    "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary",
-]
-NUMERIC_FIELDS = {
-    "CreditScore": float,
-    "Age": float,
-    "Tenure": float,
-    "Balance": float,
-    "NumOfProducts": float,
-    "HasCrCard": float,
-    "IsActiveMember": float,
-    "EstimatedSalary": float,
-}
-VALID_BATCH_MODES = {"fail_fast", "partial"}
-MAX_BATCH_SIZE = 100
 
+logger = logging.getLogger(__name__)
 _MISSING_FIELD_RE = re.compile(r"^Missing required field: (?P<field>.+)$")
 _NUMERIC_FIELD_RE = re.compile(r"^Field '(?P<field>[^']+)' must be a number")
 
@@ -35,19 +31,9 @@ def _timestamp_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_model_metadata() -> dict[str, Any]:
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    metadata_path = os.path.join(project_root, "artifacts", "metadata.json")
-    defaults = {"model_name": "churn_predictor", "model_version": "1.0.0"}
-    try:
-        with open(metadata_path, "r", encoding="utf-8") as file:
-            raw = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return defaults
-    return {
-        "model_name": raw.get("model_name", defaults["model_name"]),
-        "model_version": raw.get("version", defaults["model_version"]),
-    }
+def _load_model_metadata() -> dict[str, str]:
+    """Compatibility seam retained for focused batch-service tests."""
+    return model_service.prediction_metadata()
 
 
 def _extract_record_id(record: Any) -> Any | None:
@@ -68,27 +54,6 @@ def _build_batch_envelope(*, status, results, errors, summary):
         "metadata": _load_model_metadata(),
         "timestamp": _timestamp_now(),
     }
-
-
-def validate_record(record: Any) -> tuple[bool, list[str], dict | None]:
-    """Validate and coerce one prediction record."""
-    if not isinstance(record, dict):
-        return False, ["Record must be a JSON object"], None
-
-    missing = [key for key in REQUIRED_FIELDS if record.get(key) in (None, "")]
-    if missing:
-        return False, [f"Missing required field: {key}" for key in missing], None
-
-    coerced = {field: record.get(field) for field in REQUIRED_FIELDS}
-    errors = []
-    for key, caster in NUMERIC_FIELDS.items():
-        try:
-            coerced[key] = caster(coerced[key])
-        except (TypeError, ValueError):
-            errors.append(f"Field '{key}' must be a number (got {record.get(key)!r})")
-    if errors:
-        return False, errors, None
-    return True, [], coerced
 
 
 def validate_batch(records: list[dict], mode: str) -> dict:
@@ -179,3 +144,94 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         errors=errors,
         summary=summary,
     )
+
+
+def validate_batch_payload(payload: Any) -> tuple[list, dict]:
+    if payload is None:
+        raise APIServiceError("Invalid JSON body")
+    if not isinstance(payload, dict):
+        raise APIServiceError("JSON body must be an object")
+    if "records" not in payload:
+        raise BatchContractViolation("Field 'records' is required and must be a list")
+
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise BatchContractViolation("Field 'records' must be a list")
+    if len(records) > MAX_BATCH_SIZE:
+        raise BatchContractViolation(
+            f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})", status_code=413
+        )
+    options = payload.get("options", {})
+    if not isinstance(options, dict):
+        raise BatchContractViolation("Field 'options' must be an object")
+    return records, options
+
+
+def predict_batch(records: list, options: dict) -> dict[str, Any]:
+    """Check readiness and execute a validated JSON or CSV batch."""
+    mode = options.get("mode", "fail_fast")
+    if mode not in VALID_BATCH_MODES:
+        raise BatchContractViolation("options.mode must be one of: fail_fast, partial")
+    model_service.ensure_artifacts_ready()
+    try:
+        return predict_batch_records(records, options)
+    except ValueError as exc:
+        raise BatchContractViolation(str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Batch prediction failed")
+        raise PredictionExecutionError(f"Internal server error: {exc}") from exc
+
+
+def predict_batch_payload(payload: Any) -> dict[str, Any]:
+    records, options = validate_batch_payload(payload)
+    return predict_batch(records, options)
+
+
+def parse_batch_options_json(options_raw: str | None) -> dict:
+    if options_raw is None or not str(options_raw).strip():
+        return {}
+    try:
+        options = json.loads(options_raw)
+    except json.JSONDecodeError as exc:
+        raise BatchContractViolation(f"Invalid options JSON: {exc.msg}") from exc
+    if not isinstance(options, dict):
+        raise BatchContractViolation("Field 'options' must be an object")
+    return options
+
+
+def parse_csv_upload_records(filename: str | None, file: BinaryIO | None) -> list[dict]:
+    if file is None:
+        raise BatchContractViolation("Field 'file' is required")
+
+    normalized_filename = (filename or "").strip()
+    if not normalized_filename:
+        raise BatchContractViolation("Uploaded filename must not be empty")
+    if not normalized_filename.lower().endswith(".csv"):
+        raise BatchContractViolation("Uploaded file must be a .csv")
+
+    try:
+        frame = pd.read_csv(file)
+    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError, ValueError) as exc:
+        raise BatchContractViolation(f"CSV could not be parsed: {exc}") from exc
+
+    frame = frame.dropna(how="all")
+    if frame.empty:
+        raise BatchContractViolation("CSV must contain at least one data row")
+    missing_columns = [field for field in REQUIRED_FIELDS if field not in frame.columns]
+    if missing_columns:
+        raise BatchContractViolation(
+            f"CSV is missing required columns: {', '.join(missing_columns)}"
+        )
+
+    records = frame.to_dict(orient="records")
+    if len(records) > MAX_BATCH_SIZE:
+        raise BatchContractViolation(
+            f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})", status_code=413
+        )
+    return records
+
+
+def predict_csv_batch(filename: str | None, file: BinaryIO | None, options_raw: str | None):
+    options = parse_batch_options_json(options_raw)
+    records = parse_csv_upload_records(filename, file)
+    return predict_batch(records, options)
