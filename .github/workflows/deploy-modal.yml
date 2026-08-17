@@ -16,7 +16,6 @@ jobs:
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      MODAL_SENDGRID_SECRET_NAME: ${{ vars.MODAL_SENDGRID_SECRET_NAME }}
 
     steps:
       - name: Check out repository

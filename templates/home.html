@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Churning model1</title>
+    <title>Customer Churn Prediction</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -78,8 +78,7 @@
         <h1>Customer Churn Prediction</h1>
         <div class="links">
             <a href="/">Home</a>
-            <a href="/predictbatch">Batch Prediction (JSON)</a>
-            <a href="/outreach">Outreach Pipeline</a>
+            <a href="/predictbatch">Batch Prediction (CSV)</a>
         </div>
 
         <form action="/predictdata" method="post">
@@ -154,7 +153,9 @@
             <button type="submit">Predict</button>
         </form>
 
-        <h2>The churn prediction is: {{ results }}</h2>
+        {% if results %}
+        <h2>{{ results }}</h2>
+        {% endif %}
 
         {% if error %}
         <div class="form-group">
@@ -167,20 +168,6 @@
         <div class="form-group">
             <label>Churn Probability:</label>
             <div>{{ (churn_probability * 100) | round(2) }}%</div>
-        </div>
-        {% if clv is not none %}
-        <div class="form-group">
-            <label>Estimated CLV (Proxy):</label>
-            <div>${{ clv | round(2) }}</div>
-        </div>
-        {% endif %}
-        <div class="form-group">
-            <label>Recommended Retention Action:</label>
-            <div>{{ action }}</div>
-        </div>
-        <div class="form-group">
-            <label>Estimated Net Gain (ROI proxy):</label>
-            <div>${{ net_gain | round(2) }}</div>
         </div>
         {% endif %}
     </div>

@@ -332,11 +332,10 @@
         <div class="card hero">
             <div>
                 <h1>Batch Churn Prediction</h1>
-                <p>Score customer batches from CSV uploads, compute decisioning outputs, and preview <strong>email_candidates</strong> for outreach review.</p>
+                <p>Score customer batches from CSV uploads and review model predictions and validation errors.</p>
                 <div class="links">
                     <a href="/">Home</a>
                     <a href="/predictdata">Single Prediction Form</a>
-                    <a href="/outreach">Outreach Pipeline</a>
                 </div>
             </div>
             <div class="meta-grid">
@@ -422,38 +421,6 @@
         </div>
 
         <div class="card">
-            <h3>Email Candidates (Not Sent)</h3>
-            {% if response_body["email_candidates"] %}
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Index</th>
-                            <th>ID</th>
-                            <th>p_churn</th>
-                            <th>Recommended Action</th>
-                            <th>Net Gain</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in response_body["email_candidates"] %}
-                        <tr>
-                            <td>{{ item["index"] }}</td>
-                            <td>{{ item["id"] }}</td>
-                            <td>{{ item["p_churn"] }}</td>
-                            <td>{{ item["recommended_action"] }}</td>
-                            <td>{{ item["net_gain"] }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <p>No email candidates selected for this batch.</p>
-            {% endif %}
-        </div>
-
-        <div class="card">
             <h3>Per-Record Results</h3>
             {% if response_body["results"] %}
             <div class="table-wrap">
@@ -464,9 +431,6 @@
                             <th>ID</th>
                             <th>Label</th>
                             <th>p_churn</th>
-                            <th>CLV</th>
-                            <th>Recommended Action</th>
-                            <th>Net Gain</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -476,9 +440,6 @@
                             <td>{{ item["id"] }}</td>
                             <td>{{ item["predicted_label"] }}</td>
                             <td>{{ item["p_churn"] }}</td>
-                            <td>{{ item["clv"] }}</td>
-                            <td>{{ item["recommended_action"] }}</td>
-                            <td>{{ item["net_gain"] }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
