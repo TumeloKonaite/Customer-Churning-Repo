@@ -7,6 +7,8 @@ if ([string]::IsNullOrWhiteSpace($baseUrl)) {
 
 $healthUrl = "$baseUrl/health"
 $predictUrl = "$baseUrl/api/predict"
+$docsUrl = "$baseUrl/docs"
+$openApiUrl = "$baseUrl/openapi.json"
 
 Write-Host "Smoke test against $baseUrl"
 
@@ -54,6 +56,26 @@ try {
 if ($null -eq $predictResponse.p_churn) {
     Write-Error "Predict response missing p_churn."
     $predictResponse | ConvertTo-Json -Depth 10 | Write-Host
+    exit 1
+}
+
+try {
+    $docsResponse = Invoke-WebRequest -Uri $docsUrl -Method Get
+    if ($docsResponse.StatusCode -ne 200) {
+        throw "Swagger UI returned status $($docsResponse.StatusCode)."
+    }
+} catch {
+    Write-Error "Swagger UI check failed: $($_.Exception.Message)"
+    exit 1
+}
+
+try {
+    $openApiResponse = Invoke-RestMethod -Uri $openApiUrl -Method Get
+    if ([string]::IsNullOrWhiteSpace($openApiResponse.openapi)) {
+        throw "Response does not contain an OpenAPI version."
+    }
+} catch {
+    Write-Error "OpenAPI schema check failed: $($_.Exception.Message)"
     exit 1
 }
 

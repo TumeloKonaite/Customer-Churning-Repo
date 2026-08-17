@@ -5,12 +5,16 @@ description = "Train and serve a customer churn prediction model"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "flask",
+    "fastapi",
+    "httpx",
+    "jinja2",
     "modal",
     "numpy",
     "pandas",
     "pytest",
+    "python-multipart",
     "scikit-learn",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]

@@ -1,6 +1,6 @@
 # Customer Churn Prediction
 
-This repository has one responsibility: train and serve a customer churn model. It supports local Python execution and Modal production deployment.
+This repository has one responsibility: train and serve a customer churn model. It uses FastAPI for local ASGI execution and Modal production deployment.
 
 ## Features
 
@@ -9,6 +9,7 @@ This repository has one responsibility: train and serve a customer churn model. 
 - batch churn prediction through JSON or CSV
 - per-record batch validation with `fail_fast` and `partial` modes
 - model health and metadata reporting
+- typed OpenAPI documentation with Swagger UI and ReDoc
 - Modal deployment with build-time model training
 
 Prediction responses contain model outputs only. The application does not make retention decisions, calculate ROI, generate outreach, or send email.
@@ -27,14 +28,14 @@ On Windows, activate the environment with `.venv\Scripts\activate`.
 
 ## Train and run locally
 
-`application.py` is the sole local Flask entrypoint.
+`application.py` exports the FastAPI application as `app`. Run it with Uvicorn after training:
 
 ```bash
 python -m src.train
-python application.py
+uvicorn application:app --host 0.0.0.0 --port 5001
 ```
 
-The application listens on `http://localhost:5001` by default. Set `PORT` or `FLASK_DEBUG=1` when needed.
+The application listens on `http://localhost:5001` by default. `python application.py` is also supported and uses `PORT` (default `5001`) and `UVICORN_RELOAD=1` for auto-reload. `make run PORT=8000` changes the Make target's port. Explicit Uvicorn CLI flags take precedence when using the command above.
 
 Equivalent Make targets are available:
 
@@ -45,6 +46,16 @@ make test
 ```
 
 Training reads `dataset/Churn_Modelling.csv` and writes the model, preprocessing objects, schema, metrics, and metadata under `artifacts/`.
+
+## Interactive API documentation
+
+With the application running, FastAPI serves:
+
+- Swagger UI at `http://localhost:5001/docs`
+- ReDoc at `http://localhost:5001/redoc`
+- the generated OpenAPI document at `http://localhost:5001/openapi.json`
+
+In Swagger UI, expand `POST /api/predict`, select **Try it out**, keep or edit the supplied example, and execute the request. For a JSON batch, use either `POST /api/predict/batch` or its compatibility alias and select `fail_fast` or `partial` in `options.mode`. For `POST /api/batch_predict_csv`, choose a CSV with the file picker and optionally enter `{"mode":"partial"}` in the `options` field.
 
 ## Web UI
 
@@ -137,7 +148,7 @@ CSV files require the ten model fields shown above. `customer_id`, `row_id`, or 
 
 ## Smoke tests
 
-The cross-platform smoke scripts validate `/health` and `/api/predict` against a local or Modal URL.
+The cross-platform smoke scripts validate `/health`, `/api/predict`, `/docs`, and `/openapi.json` against a local or Modal URL.
 
 ```bash
 BASE_URL=http://localhost:5001 ./scripts/smoke.sh
@@ -156,7 +167,7 @@ modal serve modal_app.py
 modal deploy modal_app.py
 ```
 
-The Modal image installs `requirements.txt`, copies the application, trains the model during image construction, and serves the Flask WSGI app. Runtime scaling and timeout settings are defined in `modal_app.py`.
+The Modal image installs `requirements.txt`, copies the application, trains the model during image construction, and serves the FastAPI application through Modal's ASGI adapter. Runtime scaling and timeout settings are defined in `modal_app.py`. The deployed URL exposes the same `/docs`, `/redoc`, and `/openapi.json` routes as local development.
 
 GitHub deployment runs on pushes to `main` and manual dispatch. Configure these repository secrets:
 
@@ -181,8 +192,8 @@ python -m pip install -e '.[notebook]'
 ## Project layout
 
 ```text
-application.py             Local Flask entrypoint and HTTP/UI routes
-modal_app.py               Modal image build and WSGI deployment
+application.py             FastAPI app, Pydantic contracts, and HTTP/UI routes
+modal_app.py               Modal image build and ASGI deployment
 src/train.py               Training command and metadata generation
 src/components/            Data ingestion, transformation, and model training
 src/pipeline/               Training and prediction pipelines
@@ -190,7 +201,7 @@ src/services/              Batch validation and prediction service
 templates/                 Prediction-only web UI
 scripts/smoke.sh           POSIX smoke test
 scripts/smoke.ps1          PowerShell smoke test
-tests/                      API, batch, metrics, and training tests
+tests/                      API, OpenAPI, batch, metrics, and training tests
 notebooks/                  Optional exploratory analysis
 ```
 

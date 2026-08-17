@@ -1,6 +1,10 @@
 import numpy as np
+from fastapi.testclient import TestClient
 
 import application
+
+
+client = TestClient(application.app)
 
 
 def valid_payload():
@@ -44,10 +48,10 @@ def patch_prediction(monkeypatch, *, label=1, probability=0.82):
 
 def test_predict_returns_prediction_only_contract(monkeypatch):
     patch_prediction(monkeypatch, label=1, probability=0.82)
-    response = application.app.test_client().post("/api/predict", json=valid_payload())
+    response = client.post("/api/predict", json=valid_payload())
 
     assert response.status_code == 200
-    body = response.get_json()
+    body = response.json()
     assert set(body) == {
         "status", "predicted_label", "p_churn", "model_name", "model_version", "timestamp"
     }
@@ -60,10 +64,10 @@ def test_predict_returns_prediction_only_contract(monkeypatch):
 
 def test_predict_probability_unavailable_is_null(monkeypatch):
     patch_prediction(monkeypatch, label=0, probability=None)
-    response = application.app.test_client().post("/api/predict", json=valid_payload())
+    response = client.post("/api/predict", json=valid_payload())
 
     assert response.status_code == 200
-    body = response.get_json()
+    body = response.json()
     assert body["predicted_label"] == 0
     assert body["p_churn"] is None
 
@@ -72,10 +76,10 @@ def test_predict_reports_all_missing_required_fields():
     payload = valid_payload()
     payload.pop("Age")
     payload.pop("Balance")
-    response = application.app.test_client().post("/api/predict", json=payload)
+    response = client.post("/api/predict", json=payload)
 
     assert response.status_code == 400
-    body = response.get_json()
+    body = response.json()
     assert body["status"] == "error"
     assert body["errors"] == ["Missing required field: Age", "Missing required field: Balance"]
 
@@ -83,27 +87,48 @@ def test_predict_reports_all_missing_required_fields():
 def test_predict_rejects_invalid_numeric_input():
     payload = valid_payload()
     payload["Age"] = "not-a-number"
-    response = application.app.test_client().post("/api/predict", json=payload)
+    response = client.post("/api/predict", json=payload)
 
     assert response.status_code == 400
-    assert "Field 'Age' must be a number" in response.get_json()["errors"][0]
+    assert "Field 'Age' must be a number" in response.json()["errors"][0]
+
+
+def test_predict_preserves_content_type_and_invalid_json_errors():
+    unsupported = client.post(
+        "/api/predict",
+        content="not-json",
+        headers={"Content-Type": "text/plain"},
+    )
+    assert unsupported.status_code == 415
+    assert unsupported.json() == {
+        "status": "error",
+        "message": "Content-Type must be application/json",
+    }
+
+    invalid_json = client.post(
+        "/api/predict",
+        content="{bad",
+        headers={"Content-Type": "application/json"},
+    )
+    assert invalid_json.status_code == 400
+    assert invalid_json.json() == {"status": "error", "message": "Invalid JSON body"}
 
 
 def test_predict_returns_503_when_model_is_not_ready(monkeypatch):
     monkeypatch.setattr(application, "artifacts_ready", lambda: False)
-    response = application.app.test_client().post("/api/predict", json=valid_payload())
+    response = client.post("/api/predict", json=valid_payload())
 
     assert response.status_code == 503
-    assert response.get_json()["status"] == "error"
+    assert response.json()["status"] == "error"
 
 
 def test_health_reports_artifact_readiness_and_metadata(monkeypatch):
     monkeypatch.setattr(application, "artifacts_ready", lambda: False)
     monkeypatch.setattr(application, "load_metadata", lambda: {"model_name": "test_model"})
-    response = application.app.test_client().get("/health")
+    response = client.get("/health")
 
     assert response.status_code == 200
-    body = response.get_json()
+    body = response.json()
     assert body["status"] == "healthy"
     assert body["model_loaded"] is False
     assert body["metadata"] == {"model_name": "test_model"}

@@ -1,4 +1,5 @@
 PYTHON ?= python
+PORT ?= 5001
 
 ifeq ($(OS),Windows_NT)
 SMOKE_CMD = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke.ps1
@@ -13,7 +14,7 @@ install:
 	$(PYTHON) -m pip install -r requirements.txt
 
 run:
-	$(PYTHON) application.py
+	$(PYTHON) -m uvicorn application:app --host 0.0.0.0 --port $(PORT)
 
 train:
 	$(PYTHON) -m src.train
