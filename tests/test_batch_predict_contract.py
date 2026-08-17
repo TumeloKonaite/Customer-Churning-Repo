@@ -3,7 +3,11 @@ import json
 
 import application
 import src.services.prediction_service as prediction_service
+from fastapi.testclient import TestClient
 from src.services.prediction_service import MAX_BATCH_SIZE, REQUIRED_FIELDS
+
+
+client = TestClient(application.app)
 
 
 def valid_record():
@@ -27,7 +31,7 @@ def csv_upload_from_records(records):
     lines = [",".join(headers)]
     for record in records:
         lines.append(",".join(str(record.get(header, "")) for header in headers))
-    return {"file": (io.BytesIO(("\n".join(lines) + "\n").encode()), "batch.csv")}
+    return {"file": ("batch.csv", io.BytesIO(("\n".join(lines) + "\n").encode()), "text/csv")}
 
 
 class FakePredictPipeline:
@@ -64,13 +68,13 @@ def assert_prediction_only_envelope(body):
 
 
 def test_batch_contract_requires_records():
-    response = application.app.test_client().post("/api/predict/batch", json={})
+    response = client.post("/api/predict/batch", json={})
     assert response.status_code == 400
-    assert response.get_json()["contract_version"] == "v1"
+    assert response.json()["contract_version"] == "v1"
 
 
 def test_batch_over_limit_returns_413():
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch", json={"records": [valid_record()] * (MAX_BATCH_SIZE + 1)}
     )
     assert response.status_code == 413
@@ -80,13 +84,13 @@ def test_batch_fail_fast_stops_before_model_call(monkeypatch):
     patch_batch_execution(monkeypatch, labels=[], probabilities=[])
     invalid = valid_record()
     invalid.pop("Age")
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch",
         json={"records": [valid_record(), invalid, valid_record()], "options": {"mode": "fail_fast"}},
     )
 
     assert response.status_code == 400
-    body = response.get_json()
+    body = response.json()
     assert_prediction_only_envelope(body)
     assert body["status"] == "error"
     assert body["results"] == []
@@ -101,13 +105,13 @@ def test_batch_partial_scores_valid_rows_and_preserves_indices(monkeypatch):
     invalid["Balance"] = "bad"
     final = valid_record()
     final["Age"] = 50
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch",
         json={"records": [valid_record(), invalid, final], "options": {"mode": "partial"}},
     )
 
     assert response.status_code == 200
-    body = response.get_json()
+    body = response.json()
     assert_prediction_only_envelope(body)
     assert body["status"] == "partial"
     assert [item["index"] for item in body["results"]] == [0, 2]
@@ -130,20 +134,20 @@ def test_batch_preserves_supported_ids_without_model_features(monkeypatch):
     records[0]["customer_id"] = "customer-1"
     records[1]["row_id"] = 42
     records[2]["id"] = "generic-3"
-    response = application.app.test_client().post("/api/predict/batch", json={"records": records})
+    response = client.post("/api/predict/batch", json={"records": records})
 
-    body = response.get_json()
+    body = response.json()
     assert [item["id"] for item in body["results"]] == ["customer-1", 42, "generic-3"]
     assert list(FakePredictPipeline.last_df.columns) == REQUIRED_FIELDS
 
 
 def test_batch_probability_unavailable_is_null(monkeypatch):
     patch_batch_execution(monkeypatch, labels=[1, 0], probabilities=None)
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch", json={"records": [valid_record(), valid_record()]}
     )
 
-    body = response.get_json()
+    body = response.json()
     assert_prediction_only_envelope(body)
     assert [item["p_churn"] for item in body["results"]] == [None, None]
 
@@ -154,12 +158,12 @@ def test_batch_partial_with_no_valid_rows_returns_errors(monkeypatch):
     missing.pop("Age")
     numeric = valid_record()
     numeric["Tenure"] = "bad"
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch",
         json={"records": [missing, numeric], "options": {"mode": "partial"}},
     )
 
-    body = response.get_json()
+    body = response.json()
     assert body["status"] == "failed"
     assert body["results"] == []
     assert [error["field"] for error in body["errors"]] == ["Age", "Tenure"]
@@ -168,7 +172,7 @@ def test_batch_partial_with_no_valid_rows_returns_errors(monkeypatch):
 
 def test_batch_returns_503_when_model_is_not_ready(monkeypatch):
     monkeypatch.setattr(application, "artifacts_ready", lambda: False)
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/predict/batch", json={"records": [valid_record()]}
     )
     assert response.status_code == 503
@@ -178,14 +182,14 @@ def test_batch_csv_uses_same_prediction_contract(monkeypatch):
     patch_batch_execution(monkeypatch, labels=[1], probabilities=[0.73])
     record = valid_record()
     record["customer_id"] = "csv-1"
-    response = application.app.test_client().post(
+    response = client.post(
         "/api/batch_predict_csv",
-        data={**csv_upload_from_records([record]), "options": json.dumps({"mode": "partial"})},
-        content_type="multipart/form-data",
+        files=csv_upload_from_records([record]),
+        data={"options": json.dumps({"mode": "partial"})},
     )
 
     assert response.status_code == 200
-    body = response.get_json()
+    body = response.json()
     assert_prediction_only_envelope(body)
     assert body["results"] == [
         {"index": 0, "id": "csv-1", "predicted_label": 1, "p_churn": 0.73}
@@ -193,20 +197,28 @@ def test_batch_csv_uses_same_prediction_contract(monkeypatch):
 
 
 def test_batch_csv_rejects_invalid_options_and_missing_columns():
-    client = application.app.test_client()
     invalid_options = client.post(
         "/api/batch_predict_csv",
-        data={**csv_upload_from_records([valid_record()]), "options": "{bad"},
-        content_type="multipart/form-data",
+        files=csv_upload_from_records([valid_record()]),
+        data={"options": "{bad"},
     )
     assert invalid_options.status_code == 400
-    assert "Invalid options JSON" in invalid_options.get_json()["message"]
+    assert "Invalid options JSON" in invalid_options.json()["message"]
 
     csv_body = b"CreditScore,Geography\n619,France\n"
     missing_columns = client.post(
         "/api/batch_predict_csv",
-        data={"file": (io.BytesIO(csv_body), "batch.csv")},
-        content_type="multipart/form-data",
+        files={"file": ("batch.csv", io.BytesIO(csv_body), "text/csv")},
     )
     assert missing_columns.status_code == 400
-    assert "missing required columns" in missing_columns.get_json()["message"]
+    assert "missing required columns" in missing_columns.json()["message"]
+
+
+def test_batch_csv_missing_file_preserves_contract_error():
+    response = client.post("/api/batch_predict_csv", data={"options": '{"mode":"partial"}'})
+    assert response.status_code == 400
+    assert response.json() == {
+        "status": "error",
+        "message": "Field 'file' is required",
+        "contract_version": "v1",
+    }

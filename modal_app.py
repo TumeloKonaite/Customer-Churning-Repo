@@ -1,4 +1,4 @@
-"""Modal deployment entrypoint for the customer churn Flask application."""
+"""Modal deployment entrypoint for the customer churn FastAPI application."""
 
 from pathlib import Path
 
@@ -58,9 +58,9 @@ image = (
     scaledown_window=300,
 )
 @modal.concurrent(max_inputs=10)
-@modal.wsgi_app()
-def flask_app():
-    """Return the existing Flask WSGI application for Modal to serve."""
-    from application import application
+@modal.asgi_app()
+def fastapi_app():
+    """Return the FastAPI ASGI application for Modal to serve."""
+    from application import app as fastapi_application
 
-    return application
+    return fastapi_application
