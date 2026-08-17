@@ -260,6 +260,90 @@ For compatibility with some external smoke tests, the container can also
 forward port 5000 to the app port via `ENABLE_PORT_5000=1` (default).
 Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
 
+## Deployment (Modal)
+
+Modal provides a separate deployment path for the existing Flask WSGI application. It does
+not replace or modify the Docker/ECS deployment.
+
+Install the Modal CLI and authenticate your local machine:
+
+```bash
+python -m pip install modal
+modal setup
+```
+
+Start an ephemeral development deployment (the command prints its URL):
+
+```bash
+modal serve modal_app.py
+# or: make modal-serve
+```
+
+Deploy the named `customer-churn-backend` app:
+
+```bash
+modal deploy modal_app.py
+# or: make modal-deploy
+```
+
+Modal prints the generated endpoint after deployment. Its URL has this form:
+
+```text
+https://<workspace>--customer-churn-backend-flask-app.modal.run
+```
+
+Current production endpoint:
+
+```text
+https://tumelokonaitedev--customer-churn-backend-flask-app.modal.run
+```
+
+The image build copies the application, `src/`, `templates/`, and `dataset/`, then runs
+`python -m src.train`. Consequently, the model artifacts are baked into the image before
+production traffic arrives; training does not happen on the first request.
+
+### Optional SendGrid secret
+
+No SendGrid secret is required to deploy the UI, prediction endpoints, batch endpoint, or
+`/api/outreach` with `"dry_run": true`. To allow `"dry_run": false`, create a Modal secret
+containing both supported environment variables, then opt into attaching it while serving or
+deploying:
+
+```bash
+modal secret create customer-churn-sendgrid \
+  SENDGRID_API_KEY="$SENDGRID_API_KEY" \
+  SENDGRID_VERIFIED_SENDER="$SENDGRID_VERIFIED_SENDER"
+
+MODAL_SENDGRID_SECRET_NAME=customer-churn-sendgrid modal deploy modal_app.py
+```
+
+The environment variables above must be populated in your shell; never place their values in
+the repository. For an email-enabled GitHub Actions deployment, set the repository variable
+`MODAL_SENDGRID_SECRET_NAME` to `customer-churn-sendgrid`. The workflow passes that non-secret
+name to Modal; leave it unset for dry-run-only outreach.
+
+### Validate the deployment
+
+Run the existing smoke tests against the URL printed by Modal:
+
+```bash
+BASE_URL=https://<workspace>--customer-churn-backend-flask-app.modal.run make smoke
+```
+
+You can also inspect the health endpoint directly:
+
+```bash
+curl -i https://<workspace>--customer-churn-backend-flask-app.modal.run/health
+```
+
+The service scales to zero while idle. The first request after an idle period may therefore
+have cold-start latency.
+
+The workflow at `.github/workflows/deploy-modal.yml` deploys on pushes to `main` and manual
+dispatches only; it never deploys from pull requests. Repository administrators must create a
+Modal token and store its values as the `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` GitHub Actions
+secrets before that workflow can succeed.
+
 ## Project Structure
 ```
 Customer-Churning-Repo/
