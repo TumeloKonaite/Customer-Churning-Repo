@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 import application
-from src.services.prediction_service import REQUIRED_FIELDS
+from src.schemas.prediction import REQUIRED_FIELDS
 
 
 client = TestClient(application.app)

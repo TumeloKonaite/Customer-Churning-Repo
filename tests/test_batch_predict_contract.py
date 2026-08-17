@@ -2,9 +2,11 @@ import io
 import json
 
 import application
-import src.services.prediction_service as prediction_service
+import src.services.batch_prediction_service as batch_prediction_service
 from fastapi.testclient import TestClient
-from src.services.prediction_service import MAX_BATCH_SIZE, REQUIRED_FIELDS
+from src.schemas.batch_prediction import MAX_BATCH_SIZE
+from src.schemas.prediction import REQUIRED_FIELDS
+from src.services import model_service
 
 
 client = TestClient(application.app)
@@ -52,10 +54,10 @@ def patch_batch_execution(monkeypatch, *, labels, probabilities):
     FakePredictPipeline.last_df = None
     FakePredictPipeline.labels = list(labels)
     FakePredictPipeline.probabilities = None if probabilities is None else list(probabilities)
-    monkeypatch.setattr(prediction_service, "PredictPipeline", FakePredictPipeline)
-    monkeypatch.setattr(application, "artifacts_ready", lambda: True)
+    monkeypatch.setattr(batch_prediction_service, "PredictPipeline", FakePredictPipeline)
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: True)
     monkeypatch.setattr(
-        prediction_service,
+        batch_prediction_service,
         "_load_model_metadata",
         lambda: {"model_name": "test-model", "model_version": "test-version"},
     )
@@ -171,7 +173,7 @@ def test_batch_partial_with_no_valid_rows_returns_errors(monkeypatch):
 
 
 def test_batch_returns_503_when_model_is_not_ready(monkeypatch):
-    monkeypatch.setattr(application, "artifacts_ready", lambda: False)
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: False)
     response = client.post(
         "/api/predict/batch", json={"records": [valid_record()]}
     )

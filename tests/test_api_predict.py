@@ -2,6 +2,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 import application
+from src.services import model_service, single_prediction_service
 
 
 client = TestClient(application.app)
@@ -36,11 +37,11 @@ def patch_prediction(monkeypatch, *, label=1, probability=0.82):
             probabilities = None if probability is None else np.array([probability])
             return np.array([label]), probabilities
 
-    monkeypatch.setattr(application, "artifacts_ready", lambda: True)
-    monkeypatch.setattr(application, "CustomData", FakeCustomData)
-    monkeypatch.setattr(application, "PredictPipeline", FakePredictPipeline)
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: True)
+    monkeypatch.setattr(single_prediction_service, "CustomData", FakeCustomData)
+    monkeypatch.setattr(single_prediction_service, "PredictPipeline", FakePredictPipeline)
     monkeypatch.setattr(
-        application,
+        model_service,
         "load_metadata",
         lambda: {"model_name": "test_model", "version": "9.9.9"},
     )
@@ -115,7 +116,7 @@ def test_predict_preserves_content_type_and_invalid_json_errors():
 
 
 def test_predict_returns_503_when_model_is_not_ready(monkeypatch):
-    monkeypatch.setattr(application, "artifacts_ready", lambda: False)
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: False)
     response = client.post("/api/predict", json=valid_payload())
 
     assert response.status_code == 503
@@ -123,8 +124,8 @@ def test_predict_returns_503_when_model_is_not_ready(monkeypatch):
 
 
 def test_health_reports_artifact_readiness_and_metadata(monkeypatch):
-    monkeypatch.setattr(application, "artifacts_ready", lambda: False)
-    monkeypatch.setattr(application, "load_metadata", lambda: {"model_name": "test_model"})
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: False)
+    monkeypatch.setattr(model_service, "load_metadata", lambda: {"model_name": "test_model"})
     response = client.get("/health")
 
     assert response.status_code == 200
