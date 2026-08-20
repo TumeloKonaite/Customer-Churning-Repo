@@ -4,44 +4,40 @@ from datetime import datetime, timezone
 import logging
 from typing import Any
 
-from src.pipeline.prediction_pipeline import CustomData, PredictPipeline
+import pandas as pd
+
+from src.pipeline.prediction_pipeline import PredictPipeline
+from src.schemas.prediction import SinglePredictionRequest
 from src.services import model_service
 from src.services.exceptions import APIServiceError, PredictionExecutionError
-from src.services.prediction_validation import validate_payload
+from src.services.prediction_validation import validate_record
 
 
 logger = logging.getLogger(__name__)
 
 
-def _predict_one(data: dict) -> tuple[int, float | None]:
-    customer = CustomData(
-        credit_score=float(data["CreditScore"]),
-        geography=str(data["Geography"]),
-        gender=str(data["Gender"]),
-        age=float(data["Age"]),
-        tenure=float(data["Tenure"]),
-        balance=float(data["Balance"]),
-        num_of_products=float(data["NumOfProducts"]),
-        has_cr_card=float(data["HasCrCard"]),
-        is_active_member=float(data["IsActiveMember"]),
-        estimated_salary=float(data["EstimatedSalary"]),
-    )
-    labels, probabilities = PredictPipeline().predict(customer.get_data_as_data_frame())
+def _predict_one(request: SinglePredictionRequest) -> tuple[int, float | None]:
+    record = pd.DataFrame([request.model_dump()])
+    labels, probabilities = PredictPipeline().predict(record)
     probability = float(probabilities[0]) if probabilities is not None else None
     return int(labels[0]), probability
 
 
 def predict_single(payload: Any) -> dict[str, Any]:
-    """Validate, score, and construct the single-prediction response."""
+    """Score a validated request and construct the public response."""
     if payload is None:
         raise APIServiceError("Invalid JSON body")
-    ok, errors = validate_payload(payload)
-    if not ok:
-        raise APIServiceError("Invalid input payload", errors=errors)
-    model_service.ensure_artifacts_ready()
+    if isinstance(payload, SinglePredictionRequest):
+        request = payload
+    else:
+        ok, errors, canonical = validate_record(payload, allow_identifiers=False)
+        if not ok:
+            raise APIServiceError("Invalid input payload", errors=errors)
+        request = SinglePredictionRequest.model_validate(canonical)
 
+    model_service.ensure_artifacts_ready()
     try:
-        label, probability = _predict_one(payload)
+        label, probability = _predict_one(request)
         metadata = model_service.prediction_metadata()
     except Exception as exc:
         logger.exception("Single prediction failed")

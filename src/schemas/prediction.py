@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.model_schema import CANONICAL_FEATURE_ORDER
+
 
 SINGLE_PREDICTION_EXAMPLE = {
     "CreditScore": 619,
@@ -22,26 +24,43 @@ SINGLE_PREDICTION_EXAMPLE = {
 class SinglePredictionRequest(BaseModel):
     """The ten customer features accepted by the churn model."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [SINGLE_PREDICTION_EXAMPLE]})
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        json_schema_extra={"examples": [SINGLE_PREDICTION_EXAMPLE]},
+    )
 
-    CreditScore: float = Field(description="Customer credit score", examples=[619])
-    Geography: str = Field(description="Customer country", examples=["France"])
-    Gender: str = Field(description="Customer gender", examples=["Female"])
-    Age: float = Field(description="Customer age in years", examples=[42])
-    Tenure: float = Field(description="Years as a customer", examples=[2])
-    Balance: float = Field(description="Account balance", examples=[0])
-    NumOfProducts: float = Field(description="Number of bank products", examples=[1])
-    HasCrCard: float = Field(
+    CreditScore: int = Field(ge=0, description="Customer credit score", examples=[619])
+    Geography: str = Field(min_length=1, description="Customer country", examples=["France"])
+    Gender: str = Field(min_length=1, description="Customer gender", examples=["Female"])
+    Age: int = Field(ge=0, description="Customer age in years", examples=[42])
+    Tenure: int = Field(ge=0, description="Years as a customer", examples=[2])
+    Balance: float = Field(
+        ge=0, allow_inf_nan=False, description="Account balance", examples=[0]
+    )
+    NumOfProducts: int = Field(
+        ge=0, description="Number of bank products", examples=[1]
+    )
+    HasCrCard: int = Field(
+        ge=0,
+        le=1,
         description="Whether the customer has a credit card (0 or 1)", examples=[1]
     )
-    IsActiveMember: float = Field(
+    IsActiveMember: int = Field(
+        ge=0,
+        le=1,
         description="Whether the customer is active (0 or 1)", examples=[1]
     )
-    EstimatedSalary: float = Field(description="Estimated annual salary", examples=[101348.88])
+    EstimatedSalary: float = Field(
+        ge=0,
+        allow_inf_nan=False,
+        description="Estimated annual salary",
+        examples=[101348.88],
+    )
 
 
 # Keep validation, CSV ingestion, and OpenAPI generation on one canonical field list.
-REQUIRED_FIELDS = list(SinglePredictionRequest.model_fields)
+REQUIRED_FIELDS = list(CANONICAL_FEATURE_ORDER)
 
 
 class SinglePredictionResponse(BaseModel):

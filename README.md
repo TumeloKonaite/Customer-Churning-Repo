@@ -7,7 +7,7 @@ This repository has one responsibility: train and serve a customer churn model. 
 - model training and artifact generation
 - single-customer churn prediction through JSON or the web form
 - batch churn prediction through JSON or CSV
-- per-record batch validation with `fail_fast` and `partial` modes
+- strict Pydantic validation for JSON requests and per-record CSV validation
 - model health and metadata reporting
 - typed OpenAPI documentation with Swagger UI and ReDoc
 - Modal deployment with build-time model training
@@ -45,7 +45,7 @@ make run
 make test
 ```
 
-Training reads `dataset/Churn_Modelling.csv` and writes the model, preprocessing objects, schema, metrics, and metadata under `artifacts/`.
+Training reads `dataset/Churn_Modelling.csv` and writes one fitted sklearn pipeline as `artifacts/model.pkl`, plus the versioned input schema and training metadata under `artifacts/`. The pipeline owns numeric and categorical imputation, numeric scaling, one-hot encoding, and classification.
 
 ## Interactive API documentation
 
@@ -134,7 +134,7 @@ POST to `/api/predict/batch` (or `/api/batch_predict`) with a `records` list and
 }
 ```
 
-Each successful result contains exactly `index`, `id`, `predicted_label`, and `p_churn`. The envelope also contains validation errors, a summary, model metadata, and a timestamp. `fail_fast` stops validation at the first invalid record; `partial` scores every valid record and returns row-level errors for invalid records.
+Each successful result contains exactly `index`, `id`, `predicted_label`, and `p_churn`. The envelope also contains a summary, model metadata, and a timestamp. JSON records are validated by FastAPI before inference; invalid JSON records receive a structured 422 response. For CSV, `fail_fast` stops at the first invalid row and `partial` scores every valid row while returning row-level errors.
 
 ### CSV batch prediction
 
@@ -145,6 +145,12 @@ curl -X POST http://localhost:5001/api/batch_predict_csv \
 ```
 
 CSV files require the ten model fields shown above. `customer_id`, `row_id`, or `id` may be included for response passthrough. The maximum batch size is 100.
+
+## Model input schema
+
+`artifacts/schema.json` is generated with the model and is versioned independently from the executable artifact. It records canonical feature order, numeric and categorical ownership, data types, required/nullability rules, categorical values observed during fitting, the unseen-category policy, and stable transformed feature names. All current API features are required and non-nullable, and unexpected fields are rejected. Categorical strings not observed during training remain valid and are handled by `OneHotEncoder(handle_unknown="ignore")`.
+
+Imputers remain inside the fitted pipeline for approved training and batch data. They are not a fallback for malformed API requests: omitted fields, explicit nulls, wrong types, and unexpected fields are rejected with FastAPI's structured 422 validation response before prediction.
 
 ## Smoke tests
 
@@ -202,7 +208,7 @@ src/pipeline/               Training and prediction pipelines
 src/services/              Health, artifact, validation, ingestion, and prediction logic
   single_prediction_service.py  Single-customer inference orchestration
   batch_prediction_service.py   JSON/CSV batch inference orchestration
-  prediction_validation.py      Shared record validation and coercion
+  prediction_validation.py      Shared Pydantic validation for CSV/non-HTTP callers
 templates/                 Prediction-only web UI
 scripts/smoke.sh           POSIX smoke test
 scripts/smoke.ps1          PowerShell smoke test

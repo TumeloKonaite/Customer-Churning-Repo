@@ -1,7 +1,6 @@
 """HTTP error translation for service and request-validation failures."""
 
 from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.schemas.errors import BATCH_CONTRACT_VERSION
@@ -36,12 +35,3 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(APIServiceError)
     def api_service_error_handler(request: Request, exc: APIServiceError) -> JSONResponse:
         return json_error(exc.message, exc.status_code, exc.errors)
-
-    @app.exception_handler(RequestValidationError)
-    def request_validation_error_handler(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
-        """Translate FastAPI body parsing errors to the established 400 contracts."""
-        if request.url.path == "/api/batch_predict_csv":
-            return batch_contract_error("Field 'file' is required")
-        return json_error("Invalid JSON body")

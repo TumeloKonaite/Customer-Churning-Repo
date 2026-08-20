@@ -23,14 +23,6 @@ def valid_payload():
     }
 
 
-class FakeCustomData:
-    def __init__(self, **kwargs):
-        self.kwargs = kwargs
-
-    def get_data_as_data_frame(self):
-        return object()
-
-
 def patch_prediction(monkeypatch, *, label=1, probability=0.82):
     class FakePredictPipeline:
         def predict(self, features):
@@ -38,7 +30,6 @@ def patch_prediction(monkeypatch, *, label=1, probability=0.82):
             return np.array([label]), probabilities
 
     monkeypatch.setattr(model_service, "artifacts_ready", lambda: True)
-    monkeypatch.setattr(single_prediction_service, "CustomData", FakeCustomData)
     monkeypatch.setattr(single_prediction_service, "PredictPipeline", FakePredictPipeline)
     monkeypatch.setattr(
         model_service,
@@ -79,10 +70,9 @@ def test_predict_reports_all_missing_required_fields():
     payload.pop("Balance")
     response = client.post("/api/predict", json=payload)
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     body = response.json()
-    assert body["status"] == "error"
-    assert body["errors"] == ["Missing required field: Age", "Missing required field: Balance"]
+    assert [error["loc"][-1] for error in body["detail"]] == ["Age", "Balance"]
 
 
 def test_predict_rejects_invalid_numeric_input():
@@ -90,8 +80,8 @@ def test_predict_rejects_invalid_numeric_input():
     payload["Age"] = "not-a-number"
     response = client.post("/api/predict", json=payload)
 
-    assert response.status_code == 400
-    assert "Field 'Age' must be a number" in response.json()["errors"][0]
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "Age"
 
 
 def test_predict_preserves_content_type_and_invalid_json_errors():
@@ -111,8 +101,21 @@ def test_predict_preserves_content_type_and_invalid_json_errors():
         content="{bad",
         headers={"Content-Type": "application/json"},
     )
-    assert invalid_json.status_code == 400
-    assert invalid_json.json() == {"status": "error", "message": "Invalid JSON body"}
+    assert invalid_json.status_code == 422
+    assert invalid_json.json()["detail"][0]["type"] == "json_invalid"
+
+
+def test_predict_rejects_null_coercion_and_unexpected_fields():
+    for field, value in (("Tenure", None), ("Tenure", "2")):
+        response = client.post("/api/predict", json={**valid_payload(), field: value})
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"][-1] == field
+
+    response = client.post(
+        "/api/predict", json={**valid_payload(), "unknown_feature": 123}
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 def test_predict_returns_503_when_model_is_not_ready(monkeypatch):

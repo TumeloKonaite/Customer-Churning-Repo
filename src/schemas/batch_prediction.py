@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.schemas.prediction import REQUIRED_FIELDS, SINGLE_PREDICTION_EXAMPLE
+from src.schemas.prediction import SINGLE_PREDICTION_EXAMPLE, SinglePredictionRequest
 
 
 VALID_BATCH_MODES = {"fail_fast", "partial"}
@@ -15,24 +15,14 @@ BATCH_PREDICTION_EXAMPLE = {
 }
 
 
-class BatchPredictionRecord(BaseModel):
+class BatchPredictionRecord(SinglePredictionRequest):
     """One batch record, with optional caller-provided identifier fields."""
 
     model_config = ConfigDict(
-        extra="allow",
+        extra="forbid",
+        strict=True,
         json_schema_extra={"examples": [BATCH_PREDICTION_EXAMPLE["records"][0]]},
     )
-
-    CreditScore: float
-    Geography: str
-    Gender: str
-    Age: float
-    Tenure: float
-    Balance: float
-    NumOfProducts: float
-    HasCrCard: float
-    IsActiveMember: float
-    EstimatedSalary: float
     customer_id: str | int | float | None = Field(
         default=None, description="Preferred optional record identifier"
     )
@@ -45,7 +35,7 @@ class BatchPredictionRecord(BaseModel):
 
 
 class BatchOptions(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
     mode: Literal["fail_fast", "partial"] = Field(
         default="fail_fast",
@@ -56,7 +46,11 @@ class BatchOptions(BaseModel):
 class BatchPredictionRequest(BaseModel):
     """The JSON batch contract, containing at most 100 records."""
 
-    model_config = ConfigDict(json_schema_extra={"examples": [BATCH_PREDICTION_EXAMPLE]})
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        json_schema_extra={"examples": [BATCH_PREDICTION_EXAMPLE]},
+    )
 
     records: list[BatchPredictionRecord] = Field(max_length=MAX_BATCH_SIZE)
     options: BatchOptions = Field(default_factory=BatchOptions)

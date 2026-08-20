@@ -69,13 +69,15 @@ def test_csv_operation_uses_multipart_with_required_binary_file():
 def test_success_and_error_response_schemas_are_documented():
     document = client.get("/openapi.json").json()
     paths = document["paths"]
-    for path in ("/api/predict", "/api/predict/batch", "/api/batch_predict", "/api/batch_predict_csv"):
+    for path in ("/api/predict", "/api/predict/batch", "/api/batch_predict"):
         responses = paths[path]["post"]["responses"]
         assert "200" in responses
-        assert "400" in responses
-        assert "422" not in responses
+        assert "422" in responses
         assert responses["200"]["content"]["application/json"]["schema"]
-        assert responses["400"]["content"]["application/json"]["schema"]
+
+    csv_responses = paths["/api/batch_predict_csv"]["post"]["responses"]
+    assert {"200", "400", "422"} <= set(csv_responses)
+    assert csv_responses["400"]["content"]["application/json"]["schema"]
 
 
 def test_html_routes_still_render():

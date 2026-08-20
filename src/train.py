@@ -19,15 +19,15 @@ def _load_json(path, default):
 
 def load_feature_schema(artifacts_dir):
     schema_path = os.path.join(artifacts_dir, "schema.json")
-    feature_columns_path = os.path.join(artifacts_dir, "feature_columns.json")
-
     schema = _load_json(schema_path, {})
-    feature_columns = _load_json(feature_columns_path, [])
 
     return {
-        "raw_features": schema.get("feature_schema", []),
-        "input_columns": schema.get("all_cols", []),
-        "transformed_columns": feature_columns,
+        "schema_version": schema.get("schema_version", "legacy"),
+        "raw_features": schema.get("features", schema.get("feature_schema", [])),
+        "input_columns": schema.get(
+            "canonical_feature_order", schema.get("all_cols", [])
+        ),
+        "transformed_columns": schema.get("transformed_feature_names", []),
     }
 
 
@@ -35,6 +35,7 @@ def build_metadata(model_name, metrics, feature_schema, timestamp, model_path):
     return {
         "trained_at": timestamp,
         "model_name": model_name,
+        "version": feature_schema.get("schema_version", "1.0.0"),
         "model_path": model_path,
         "metrics": metrics,
         "feature_schema": feature_schema,
