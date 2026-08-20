@@ -68,5 +68,8 @@ class SinglePredictionResponse(BaseModel):
     predicted_label: int
     p_churn: float | None = Field(description="Churn probability, or null when unavailable")
     model_name: str
-    model_version: str
+    model_version: str | None = None
+    deployment_id: str | None = None
+    model_version_id: str | None = None
+    mlflow_run_id: str | None = None
     timestamp: str

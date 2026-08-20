@@ -14,6 +14,7 @@ router = APIRouter()
     response_model=HealthResponse,
     tags=["Health"],
     summary="Check service and model readiness",
+    response_model_exclude_unset=True,
 )
 def health_check():
     return get_health_status()

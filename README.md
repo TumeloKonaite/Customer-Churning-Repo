@@ -1,26 +1,20 @@
 # Customer Churn Prediction
 
-This repository has one responsibility: train and serve a customer churn model. It uses FastAPI for local ASGI execution and Modal production deployment.
+This service trains one fitted scikit-learn pipeline locally, records eligible runs and models in DagsHub MLflow, packages one exact registered version for Modal inference, and uses Neon PostgreSQL as the operational database foundation. Evidently monitoring and prediction persistence are intentionally deferred.
 
-## Features
+## Responsibility boundaries
 
-- model training and artifact generation
-- single-customer churn prediction through JSON or the web form
-- batch churn prediction through JSON or CSV
-- strict Pydantic validation for JSON requests and per-record CSV validation
-- model health and metadata reporting
-- typed OpenAPI documentation with Swagger UI and ReDoc
-- Modal deployment with build-time model training
+| Component | Responsibility |
+| --- | --- |
+| Local environment | Training, evaluation, privacy-safe references, publication, validation, packaging |
+| DagsHub MLflow | Runs, metrics, lineage, contracts, references, model artifacts, numeric registry versions |
+| Neon PostgreSQL | Future deployment, prediction, outcome, label, and monitoring-run state |
+| Modal | Single and batch inference from a prepackaged model only |
+| Evidently | Future data quality, drift, and delayed-performance calculations |
 
-Prediction responses contain model outputs only. The application does not make retention decisions, calculate ROI, generate outreach, or send email.
+Modal never trains, refits, registers, selects `latest`, or contacts DagsHub during a prediction. There is no self-hosted MLflow server, separate MLflow database/bucket, or custom content-addressed registry.
 
-The proposed production-monitoring definitions and privacy controls are documented
-in [the versioned monitoring contract](docs/monitoring/production-monitoring-contract-v1.md).
-It is intentionally marked unapproved until the required business, data, security,
-and privacy owners complete its decision and approval records; label-dependent
-production metrics must not be treated as authoritative before then.
-
-## Setup
+## Install
 
 Python 3.12 or newer is required.
 
@@ -30,202 +24,172 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-On Windows, activate the environment with `.venv\Scripts\activate`.
-
-## Train and run locally
-
-`application.py` exports the FastAPI application as `app`. Run it with Uvicorn after training:
-
-```bash
-python -m src.train
-uvicorn application:app --host 0.0.0.0 --port 5001
-```
-
-The application listens on `http://localhost:5001` by default. `python application.py` is also supported and uses `PORT` (default `5001`) and `UVICORN_RELOAD=1` for auto-reload. `make run PORT=8000` changes the Make target's port. Explicit Uvicorn CLI flags take precedence when using the command above.
-
-Equivalent Make targets are available:
-
-```bash
-make train
-make run
-make test
-```
-
-Training reads `dataset/Churn_Modelling.csv` and writes one fitted sklearn pipeline as `artifacts/model.pkl`, plus the versioned input schema and training metadata under `artifacts/`. The pipeline owns numeric and categorical imputation, numeric scaling, one-hot encoding, and classification.
-
-## Interactive API documentation
-
-With the application running, FastAPI serves:
-
-- Swagger UI at `http://localhost:5001/docs`
-- ReDoc at `http://localhost:5001/redoc`
-- the generated OpenAPI document at `http://localhost:5001/openapi.json`
-
-In Swagger UI, expand `POST /api/predict`, select **Try it out**, keep or edit the supplied example, and execute the request. For a JSON batch, use either `POST /api/predict/batch` or its compatibility alias and select `fail_fast` or `partial` in `options.mode`. For `POST /api/batch_predict_csv`, choose a CSV with the file picker and optionally enter `{"mode":"partial"}` in the `options` field.
-
-## Web UI
-
-- `/` — navigation
-- `/predictdata` — single-customer prediction form
-- `/predictbatch` — CSV batch upload and prediction results
-
-The UI displays only the predicted churn/stay label, churn probability, and validation or model errors.
-
-## HTTP API
-
-### Health
-
-```bash
-curl http://localhost:5001/health
-```
-
-The response reports service health, artifact readiness in `model_loaded`, and model metadata.
-
-### Single prediction
-
-```bash
-curl -X POST http://localhost:5001/api/predict \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "CreditScore": 619,
-    "Geography": "France",
-    "Gender": "Female",
-    "Age": 42,
-    "Tenure": 2,
-    "Balance": 0,
-    "NumOfProducts": 1,
-    "HasCrCard": 1,
-    "IsActiveMember": 1,
-    "EstimatedSalary": 101348.88
-  }'
-```
-
-Successful response shape:
-
-```json
-{
-  "status": "success",
-  "predicted_label": 1,
-  "p_churn": 0.82,
-  "model_name": "churn_predictor",
-  "model_version": "1.0.0",
-  "timestamp": "2026-08-17T12:00:00+00:00"
-}
-```
-
-`p_churn` is `null` when the trained estimator does not provide probabilities.
-
-### JSON batch prediction
-
-POST to `/api/predict/batch` (or `/api/batch_predict`) with a `records` list and an optional mode:
-
-```json
-{
-  "records": [
-    {
-      "customer_id": "CUST_001",
-      "CreditScore": 619,
-      "Geography": "France",
-      "Gender": "Female",
-      "Age": 42,
-      "Tenure": 2,
-      "Balance": 0,
-      "NumOfProducts": 1,
-      "HasCrCard": 1,
-      "IsActiveMember": 1,
-      "EstimatedSalary": 101348.88
-    }
-  ],
-  "options": {"mode": "partial"}
-}
-```
-
-Each successful result contains exactly `index`, `id`, `predicted_label`, and `p_churn`. The envelope also contains a summary, model metadata, and a timestamp. JSON records are validated by FastAPI before inference; invalid JSON records receive a structured 422 response. For CSV, `fail_fast` stops at the first invalid row and `partial` scores every valid row while returning row-level errors.
-
-### CSV batch prediction
-
-```bash
-curl -X POST http://localhost:5001/api/batch_predict_csv \
-  -F 'file=@customers.csv' \
-  -F 'options={"mode":"partial"}'
-```
-
-CSV files require the ten model fields shown above. `customer_id`, `row_id`, or `id` may be included for response passthrough. The maximum batch size is 100.
-
-## Model input schema
-
-`artifacts/schema.json` is generated with the model and is versioned independently from the executable artifact. It records canonical feature order, numeric and categorical ownership, data types, required/nullability rules, categorical values observed during fitting, the unseen-category policy, and stable transformed feature names. All current API features are required and non-nullable, and unexpected fields are rejected. Categorical strings not observed during training remain valid and are handled by `OneHotEncoder(handle_unknown="ignore")`.
-
-Imputers remain inside the fitted pipeline for approved training and batch data. They are not a fallback for malformed API requests: omitted fields, explicit nulls, wrong types, and unexpected fields are rejected with FastAPI's structured 422 validation response before prediction.
-
-## Smoke tests
-
-The cross-platform smoke scripts validate `/health`, `/api/predict`, `/docs`, and `/openapi.json` against a local or Modal URL.
-
-```bash
-BASE_URL=http://localhost:5001 ./scripts/smoke.sh
-```
-
-```powershell
-./scripts/smoke.ps1 -BaseUrl "https://your-modal-url"
-```
-
-## Modal deployment
-
-Modal is the only production deployment target. Authenticate the Modal CLI, then serve a development deployment or deploy to production:
-
-```bash
-modal serve modal_app.py
-modal deploy modal_app.py
-```
-
-The Modal image installs `requirements.txt`, copies the application, trains the model during image construction, and serves the FastAPI application through Modal's ASGI adapter. Runtime scaling and timeout settings are defined in `modal_app.py`. The deployed URL exposes the same `/docs`, `/redoc`, and `/openapi.json` routes as local development.
-
-GitHub deployment runs on pushes to `main` and manual dispatch. Configure these repository secrets:
-
-- `MODAL_TOKEN_ID`
-- `MODAL_TOKEN_SECRET`
-
-## Dependencies
-
-`pyproject.toml` is the dependency source of truth. `requirements.txt` and `uv.lock` are generated from it. Visualization libraries are isolated in the optional `notebook` extra and are not installed in the production Modal image.
+`pyproject.toml` is the dependency source of truth. Regenerate pinned files with:
 
 ```bash
 uv lock
 uv export --no-dev --no-emit-project --no-annotate --no-header -o requirements.txt
 ```
 
-For notebook exploration:
+## Local training and optional tracking
+
+Training always runs locally through the existing `DataIngestion`, `ModelTrainer`, and `TrainingPipeline` components:
 
 ```bash
-python -m pip install -e '.[notebook]'
+python -m src.train train --config configs/training.yaml
 ```
 
-## Project layout
+`ModelTrainer` fits every classifier configured in `configs/training.yaml`, selects the best validation ROC AUC, and evaluates only that winner on the untouched test cohort. It then writes the selected pipeline, model comparison, schema, metrics, configuration, contracts, and privacy-safe references to `artifacts/training`. This local result does not depend on MLflow or DagsHub.
+
+Remote tracking is disabled by default:
+
+```bash
+ENABLE_DAGSHUB_TRACKING=false python -m src.train train --config configs/training.yaml
+```
+
+Enable DagsHub tracking without hard-coding its tracking URI:
+
+```bash
+ENABLE_DAGSHUB_TRACKING=true \
+DAGSHUB_REPO_OWNER=your-owner \
+DAGSHUB_REPO_NAME=your-repository \
+DAGSHUB_TOKEN=your-token \
+python -m src.train train --config configs/training.yaml
+```
+
+`dagshub.init(..., mlflow=True)` selects DagsHub as the only remote backend; all experiment logging still goes through MLflow. A tracking outage produces a warning and leaves the completed local artifacts intact. There is no separate local or generic MLflow tracking mode.
+
+Production registration is deliberately stricter. Add `ENABLE_MODEL_REGISTRATION=true` to the DagsHub command. Registration or verification failure then exits non-zero, and a successful run prints the exact numeric `churn_predictor` version, source run ID, application identity, and checksum. Open the repository’s MLflow tab in DagsHub to inspect experiments, runs, metrics, artifacts, and registered versions.
+
+`RowNumber`, `CustomerId`, `Surname`, email/phone/address aliases, and case variants are rejected before references are written. Mutable local files are useful development outputs, but they are not production identities and Modal never deploys them directly.
+
+## Validate and package an exact model
+
+These commands also use the DagsHub settings shown above, including `ENABLE_DAGSHUB_TRACKING=true`.
+
+Only a positive numeric registry version is accepted:
+
+```bash
+python -m src.mlops validate-model \
+  --model-uri models:/churn_predictor/7 \
+  --output json
+```
+
+The validator resolves the source run, checks parameters, metrics, tags, signature, input example, contracts, reference purposes/privacy, checksum, model loading, and a smoke prediction. It rejects `latest`, aliases such as `@champion`, and stages such as `/Production`.
+
+The immutable application identity is:
 
 ```text
-application.py             Minimal ASGI and local-development entrypoint
-modal_app.py               Modal image build and ASGI deployment
-src/train.py               Training command and metadata generation
-src/api/                   FastAPI app factory, routers, errors, and OpenAPI setup
-src/schemas/               Endpoint-specific Pydantic API contracts
-src/components/            Data ingestion, transformation, and model training
-src/pipeline/               Training and prediction pipelines
-src/services/              Health, artifact, validation, ingestion, and prediction logic
-  single_prediction_service.py  Single-customer inference orchestration
-  batch_prediction_service.py   JSON/CSV batch inference orchestration
-  prediction_validation.py      Shared Pydantic validation for CSV/non-HTTP callers
-templates/                 Prediction-only web UI
-scripts/smoke.sh           POSIX smoke test
-scripts/smoke.ps1          PowerShell smoke test
-tests/                      API, OpenAPI, batch, metrics, and training tests
-notebooks/                  Optional exploratory analysis
+dagshub:<owner>/<repository>:churn_predictor:<numeric-version>
 ```
 
-## Model limitations
+Prepare the inference-only Modal directory before deployment:
 
-The model is trained on the included bank churn dataset. Its quality depends on the representativeness and freshness of that data. Predictions should be monitored for drift and evaluated for fairness before use in consequential workflows.
+```bash
+python -m src.mlops prepare-deployment \
+  --model-uri models:/churn_predictor/7 \
+  --output-dir build/model \
+  --expected-run-id "$EXPECTED_MLFLOW_RUN_ID" \
+  --expected-model-version-id "$EXPECTED_MODEL_VERSION_ID" \
+  --expected-pipeline-sha256 "$EXPECTED_PIPELINE_SHA256" \
+  --output json
+```
 
-## License
+`build/model` contains the MLflow model, feature contract, and `deployment_metadata.json`. It excludes training/evaluation/reference rows and all DagsHub/Neon credentials. Serialized sklearn files are executable trusted artifacts: package only a model from the configured repository after validation.
 
-See [LICENSE](LICENSE).
+## Neon database foundation
+
+In the Neon console:
+
+1. Create a project and the `churn_monitoring` database.
+2. Create a dedicated least-privilege runtime role; do not use the project owner from Modal.
+3. Grant it connect privileges now and only the table privileges introduced by later migrations.
+4. Copy the pooled connection string and use the psycopg SQLAlchemy scheme with mandatory SSL:
+
+```text
+DATABASE_URL=postgresql+psycopg://<role>:<password>@<pooled-host>/churn_monitoring?sslmode=require
+DATABASE_CONNECT_TIMEOUT_SECONDS=10
+DATABASE_POOL_SIZE=2
+DATABASE_MAX_OVERFLOW=1
+```
+
+The small per-container pool is intentional because Modal may scale to many containers. Production configuration rejects missing URLs, SQLite, local hosts, and PostgreSQL URLs without `sslmode=require`; it never silently falls back.
+
+Run the secret-safe check and the baseline migration:
+
+```bash
+python -m src.database check --output json
+python -m alembic upgrade head
+```
+
+Alembic is the only supported production schema-management mechanism. The baseline establishes migration ownership but creates none of the future operational tables. Under `APP_ENV=test`, Alembic rejects remote targets to prevent tests from reaching production.
+
+Rotate the runtime credential by creating/rotating the Neon role password, updating local/GitHub/Modal secret stores, redeploying, running the connectivity check, and then revoking the old credential. Never print the full URL.
+
+## Modal deployment
+
+Create a Modal secret named `customer-churn-production` containing only inference/runtime settings:
+
+```text
+APP_ENV=production
+DATABASE_URL
+DATABASE_CONNECT_TIMEOUT_SECONDS
+DATABASE_POOL_SIZE
+DATABASE_MAX_OVERFLOW
+MLFLOW_REGISTERED_MODEL_NAME=churn_predictor
+MLFLOW_MODEL_VERSION=7
+EXPECTED_MLFLOW_RUN_ID=<run-id>
+EXPECTED_MODEL_VERSION_ID=dagshub:<owner>/<repository>:churn_predictor:7
+EXPECTED_PIPELINE_SHA256=<digest>
+```
+
+Do not add DagsHub credentials to this Modal secret. They are used locally or in the protected GitHub deployment environment only to prepare `build/model` before `modal deploy`.
+
+```bash
+modal deploy modal_app.py
+```
+
+At container startup, Modal verifies the package, expected model/run/application identity, checksum, feature-schema version, deserialization, smoke prediction, typed production database configuration, and database connectivity before returning the FastAPI application. Individual requests load the local package and make no DagsHub call.
+
+The GitHub deployment workflow requires protected production secrets for Modal authentication, DagsHub download, and every expected model identity value. Configure the same runtime identity and Neon values in the Modal secret.
+
+## API and local serving
+
+Production inference must use a verified package prepared from an exact registered version.
+
+```bash
+uvicorn application:app --host 0.0.0.0 --port 5001
+```
+
+Endpoints:
+
+- `GET /health`
+- `POST /api/predict`
+- `POST /api/predict/batch` (and compatibility alias `/api/batch_predict`)
+- `POST /api/batch_predict_csv`
+- `/docs`, `/redoc`, and `/openapi.json`
+
+Verified health metadata exposes `deployment_id`, model name, exact numeric version, `model_version_id`, source MLflow run, and feature-schema version. Single responses and batch metadata expose `deployment_id` and `model_version_id`. No fallback version is fabricated when verified metadata is unavailable.
+
+## Rollback
+
+Rollback is a new deployment, not an alias change or runtime hot swap:
+
+1. Choose a historical numeric `churn_predictor` version in DagsHub.
+2. Run `validate-model` for that exact URI.
+3. Update all expected identity/checksum values.
+4. Prepare a fresh `build/model`; this generates a new `deployment_id`.
+5. Update the Modal secret identity and redeploy.
+6. Confirm `/health` reports the intended numeric model version and new deployment ID.
+
+## Security and data publication
+
+Allowed DagsHub artifacts are approved raw model features, labelled evaluation reference rows, deterministic dataset identities, aggregate evaluation results, versioned contracts, and the fitted pipeline. Never upload `.env` files, credentials, connection strings, raw identifiers, unrestricted source datasets, or production prediction payloads. Logs must contain identity and durations—not raw features, reference rows, authentication headers, or URLs with credentials.
+
+## Tests
+
+```bash
+pytest -q
+```
+
+Unit tests do not access DagsHub or Neon. External integration tests are opt-in and skip unless their dedicated credentials are supplied. The production monitoring rules remain documented in [docs/monitoring/production-monitoring-contract-v1.md](docs/monitoring/production-monitoring-contract-v1.md); Evidently execution and scheduling are outside this foundation.

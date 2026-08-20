@@ -1,6 +1,7 @@
 """Model artifact readiness and metadata access."""
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,33 @@ REQUIRED_ARTIFACTS = (
 )
 
 
+def deployment_package_dir() -> Path:
+    return Path(os.getenv("DEPLOYMENT_PACKAGE_DIR", PROJECT_ROOT / "build" / "model"))
+
+
+def deployment_artifacts_ready() -> bool:
+    package = deployment_package_dir()
+    return all(
+        path.exists()
+        for path in (
+            package / "deployment_metadata.json",
+            package / "feature_schema.json",
+            package / "model" / "MLmodel",
+        )
+    )
+
+
 def load_metadata() -> dict[str, Any]:
     """Load raw training metadata without making health checks depend on it."""
-    defaults = {"training_date": "unknown", "model_name": "churn_predictor"}
+    if deployment_artifacts_ready():
+        try:
+            with (deployment_package_dir() / "deployment_metadata.json").open(
+                encoding="utf-8"
+            ) as file:
+                return json.load(file)
+        except (json.JSONDecodeError, OSError):
+            return {}
+    defaults = {"model_name": "churn_predictor"}
     try:
         with (ARTIFACTS_DIR / "metadata.json").open(encoding="utf-8") as file:
             return json.load(file)
@@ -27,13 +52,21 @@ def load_metadata() -> dict[str, Any]:
 
 def prediction_metadata() -> dict[str, str]:
     metadata = load_metadata()
-    return {
-        "model_name": metadata.get("model_name", "churn_predictor"),
-        "model_version": metadata.get("version", "1.0.0"),
-    }
+    result = {"model_name": metadata.get("model_name", "churn_predictor")}
+    version = metadata.get("model_version", metadata.get("version"))
+    if version is not None:
+        result["model_version"] = str(version)
+    for field in ("deployment_id", "model_version_id", "mlflow_run_id"):
+        if metadata.get(field):
+            result[field] = str(metadata[field])
+    return result
 
 
 def artifacts_ready() -> bool:
+    if deployment_artifacts_ready():
+        return True
+    if os.getenv("APP_ENV", "development") == "production":
+        return False
     return all(path.exists() for path in REQUIRED_ARTIFACTS)
 
 

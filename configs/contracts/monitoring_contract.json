@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "prediction_horizon_days": 90,
+  "label_grace_period_days": 7,
+  "drift_reference_purpose": "drift_reference",
+  "evaluation_reference_purpose": "evaluation_reference"
+}

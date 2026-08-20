@@ -7,7 +7,7 @@ else
 SMOKE_CMD = sh scripts/smoke.sh
 endif
 
-.PHONY: run train test smoke clean install reqs modal-serve modal-deploy ci setup all
+.PHONY: run train test smoke clean install reqs db-check migrate modal-serve modal-deploy ci setup all
 
 # Development commands
 install:
@@ -17,10 +17,16 @@ run:
 	$(PYTHON) -m uvicorn application:app --host 0.0.0.0 --port $(PORT)
 
 train:
-	$(PYTHON) -m src.train
+	$(PYTHON) -m src.train train --config configs/training.yaml
 
 test:
 	$(PYTHON) -m pytest
+
+db-check:
+	$(PYTHON) -m src.database check
+
+migrate:
+	$(PYTHON) -m alembic upgrade head
 
 reqs:
 	uv lock
@@ -51,7 +57,7 @@ clean:
 ci: install test
 
 # All-in-one local setup
-setup: clean install train test
+setup: clean install test
 
 # Default target
 all: setup

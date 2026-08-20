@@ -38,6 +38,7 @@ def require_json_content_type(request: Request) -> None:
     },
     tags=["Predictions"],
     summary="Predict churn for one customer",
+    response_model_exclude_unset=True,
     openapi_extra={
         "requestBody": {
             "required": True,
@@ -88,6 +89,7 @@ def _batch_response(payload: BatchPredictionRequest) -> JSONResponse:
     responses=BATCH_RESPONSES,
     tags=["Predictions"],
     summary="Predict churn for a JSON batch",
+    response_model_exclude_unset=True,
     openapi_extra=BATCH_OPENAPI_BODY,
 )
 def predict_batch_api(
@@ -103,6 +105,7 @@ def predict_batch_api(
     responses=BATCH_RESPONSES,
     tags=["Predictions"],
     summary="Predict churn for a JSON batch (compatibility alias)",
+    response_model_exclude_unset=True,
     openapi_extra=BATCH_OPENAPI_BODY,
 )
 def predict_batch_api_alias(
@@ -126,6 +129,7 @@ def predict_batch_api_alias(
     },
     tags=["Predictions"],
     summary="Predict churn from a CSV file",
+    response_model_exclude_unset=True,
 )
 def predict_batch_csv_api(
     file: UploadFile = File(description="CSV containing the ten required model fields"),

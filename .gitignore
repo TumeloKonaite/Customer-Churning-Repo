@@ -22,6 +22,12 @@ logs/
 artifacts/
 !artifacts/sample_metadata.json
 !artifacts/schema.example.json
+build/
+
+# Local secrets
+.env
+.env.*
+!.env.example
 
 # OS
 .DS_Store

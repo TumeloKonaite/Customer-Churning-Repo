@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from copy import deepcopy
+import re
 from typing import Any
 
 
 MODEL_SCHEMA_VERSION = "1.0.0"
 TARGET_COLUMN = "Exited"
 IDENTIFIER_COLUMNS = ["RowNumber", "CustomerId", "Surname"]
+PROHIBITED_COLUMN_ALIASES = {
+    "rownumber",
+    "customerid",
+    "surname",
+    "lastname",
+    "email",
+    "emailaddress",
+    "phone",
+    "phonenumber",
+    "telephone",
+    "address",
+    "streetaddress",
+}
 
 # This order is the public contract order. The fitted ColumnTransformer selects by
 # name, so predictions do not depend on the order of incoming DataFrame columns.
@@ -35,6 +50,22 @@ NUMERIC_COLUMNS = [
     "EstimatedSalary",
 ]
 CATEGORICAL_COLUMNS = ["Geography", "Gender"]
+
+
+def prohibited_columns(columns: Iterable[object]) -> list[str]:
+    """Return identifier/PII-like columns using punctuation-insensitive matching."""
+    prohibited = {re.sub(r"[^a-z0-9]", "", name) for name in PROHIBITED_COLUMN_ALIASES}
+    return sorted(
+        str(column)
+        for column in columns
+        if re.sub(r"[^a-z0-9]", "", str(column).casefold()) in prohibited
+    )
+
+
+def reject_prohibited_columns(columns: Iterable[object]) -> None:
+    found = prohibited_columns(columns)
+    if found:
+        raise ValueError(f"Prohibited identifier columns detected: {', '.join(found)}")
 
 _INTEGER_FEATURES = {
     "CreditScore",
