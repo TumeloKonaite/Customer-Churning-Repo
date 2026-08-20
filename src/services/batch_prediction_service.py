@@ -156,7 +156,21 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
         raise BatchContractViolation("options.mode must be one of: fail_fast, partial")
     model_service.ensure_artifacts_ready()
     try:
-        return predict_batch_records(records, options)
+        result = predict_batch_records(records, options)
+        operational = model_service.operational_metadata()
+        logger.info(
+            "batch_prediction_completed deployment_id=%s model_version=%s "
+            "mlflow_run_id=%s model_version_id=%s pipeline_sha256=%s "
+            "artifact_manifest_sha256=%s integrity_status=%s",
+            operational.get("deployment_id"),
+            operational.get("model_version"),
+            operational.get("mlflow_run_id"),
+            operational.get("model_version_id"),
+            operational.get("pipeline_sha256"),
+            operational.get("artifact_manifest_sha256"),
+            operational.get("integrity_status"),
+        )
+        return result
     except ValueError as exc:
         raise BatchContractViolation(str(exc)) from exc
     except Exception as exc:

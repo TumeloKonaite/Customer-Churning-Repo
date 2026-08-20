@@ -106,6 +106,7 @@ def test_deployment_settings_require_consistent_exact_identity():
         "expected_run_id": "run-1",
         "expected_model_version_id": "dagshub:owner/repo:churn_predictor:7",
         "expected_pipeline_sha256": "a" * 64,
+        "expected_artifact_manifest_sha256": "b" * 64,
     }
     assert DeploymentSettings(**values).model_version == "7"
     with pytest.raises(ValidationError):
@@ -197,6 +198,8 @@ def _build_package(tmp_path: Path) -> tuple[Path, dict]:
         "mlflow_run_id": "run-1",
         "source_commit_sha": "abc123",
         "pipeline_sha256": checksum,
+        "artifact_manifest_sha256": "b" * 64,
+        "integrity_status": "complete",
         "application_version": "0.1.0",
         "feature_schema_version": schema["schema_version"],
         "validation_status": "validated",
@@ -237,6 +240,7 @@ def test_packaged_model_round_trip_identity_and_checksum(tmp_path, monkeypatch):
     assert result["model_version_id"] == metadata["model_version_id"]
     assert result["startup_validation_duration_seconds"] >= 0
     assert load_deployment_metadata(package)["deployment_id"] == "deployment-1"
+    assert result["artifact_manifest_sha256"] == "b" * 64
 
     metadata["pipeline_sha256"] = "0" * 64
     (package / "deployment_metadata.json").write_text(json.dumps(metadata))

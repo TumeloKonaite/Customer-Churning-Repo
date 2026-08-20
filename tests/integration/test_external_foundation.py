@@ -15,8 +15,16 @@ def test_exact_registered_model_can_be_validated_and_packaged(tmp_path):
     from src.mlops.deployment import prepare_deployment
 
     uri = os.environ["TEST_MLFLOW_MODEL_URI"]
-    metadata = prepare_deployment(uri, tmp_path / "model", environment="test")
+    metadata = prepare_deployment(
+        uri,
+        tmp_path / "model",
+        environment="test",
+        expected_artifact_manifest_sha256=os.environ[
+            "TEST_ARTIFACT_MANIFEST_SHA256"
+        ],
+    )
     assert metadata["model_version"].isdigit()
+    assert metadata["integrity_status"] == "complete"
     assert (tmp_path / "model" / "deployment_metadata.json").is_file()
 
 

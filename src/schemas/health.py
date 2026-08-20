@@ -18,3 +18,6 @@ class HealthResponse(BaseModel):
     model_version_id: str | None = None
     mlflow_run_id: str | None = None
     feature_schema_version: str | None = None
+    pipeline_sha256: str | None = None
+    artifact_manifest_sha256: str | None = None
+    integrity_status: str | None = None

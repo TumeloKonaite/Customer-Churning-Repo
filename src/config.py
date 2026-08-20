@@ -107,6 +107,9 @@ class DeploymentSettings(_Settings):
     expected_run_id: str = Field(alias="EXPECTED_MLFLOW_RUN_ID")
     expected_model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
     expected_pipeline_sha256: str = Field(alias="EXPECTED_PIPELINE_SHA256")
+    expected_artifact_manifest_sha256: str = Field(
+        alias="EXPECTED_ARTIFACT_MANIFEST_SHA256"
+    )
     deployment_package_dir: str = Field(
         default="build/model", alias="DEPLOYMENT_PACKAGE_DIR"
     )
@@ -118,12 +121,14 @@ class DeploymentSettings(_Settings):
             raise ValueError("MLFLOW_MODEL_VERSION must be an exact positive integer")
         return str(value)
 
-    @field_validator("expected_pipeline_sha256")
+    @field_validator(
+        "expected_pipeline_sha256", "expected_artifact_manifest_sha256"
+    )
     @classmethod
     def sha256_digest(cls, value: str) -> str:
         normalized = value.lower()
         if len(normalized) != 64 or any(c not in "0123456789abcdef" for c in normalized):
-            raise ValueError("EXPECTED_PIPELINE_SHA256 must be a SHA-256 hex digest")
+            raise ValueError("Expected checksum must be a SHA-256 hex digest")
         return normalized
 
     @model_validator(mode="after")
