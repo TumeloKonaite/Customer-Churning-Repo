@@ -82,7 +82,10 @@ class BatchMetadata(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     model_name: str
-    model_version: str
+    model_version: str | None = None
+    deployment_id: str | None = None
+    model_version_id: str | None = None
+    mlflow_run_id: str | None = None
 
 
 class BatchResponse(BaseModel):

@@ -5,15 +5,23 @@ description = "Train and serve a customer churn prediction model"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.16,<2",
+    "dagshub>=0.6,<1",
     "fastapi",
     "httpx",
     "jinja2",
+    "mlflow>=3.1,<4",
     "modal",
     "numpy",
     "pandas",
+    "psycopg[binary]>=3.2,<4",
+    "pyarrow>=20,<24",
+    "pydantic-settings>=2.10,<3",
     "pytest",
     "python-multipart",
+    "pyyaml>=6,<7",
     "scikit-learn",
+    "sqlalchemy>=2.0,<3",
     "uvicorn",
 ]
 
