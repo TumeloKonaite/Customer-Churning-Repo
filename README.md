@@ -14,6 +14,12 @@ This repository has one responsibility: train and serve a customer churn model. 
 
 Prediction responses contain model outputs only. The application does not make retention decisions, calculate ROI, generate outreach, or send email.
 
+The proposed production-monitoring definitions and privacy controls are documented
+in [the versioned monitoring contract](docs/monitoring/production-monitoring-contract-v1.md).
+It is intentionally marked unapproved until the required business, data, security,
+and privacy owners complete its decision and approval records; label-dependent
+production metrics must not be treated as authoritative before then.
+
 ## Setup
 
 Python 3.12 or newer is required.
