@@ -12,11 +12,11 @@ class TrainingPipeline:
         try:
             logging.info("Starting training pipeline")
             train_data, test_data = DataIngestion().initiate_data_ingestion()
-            train_arr, test_arr, _ = DataTransformation().initiate_data_transformation(
+            X_train, y_train, X_test, y_test = DataTransformation().initiate_data_transformation(
                 train_data, test_data
             )
             training_result = ModelTrainer().initiate_model_trainer(
-                train_arr, test_arr
+                X_train, y_train, X_test, y_test
             )
             logging.info("Training pipeline completed")
             return training_result

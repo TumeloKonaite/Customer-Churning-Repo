@@ -13,7 +13,7 @@ from src.schemas.prediction import SinglePredictionRequest
 
 
 def build_openapi_schema(app: FastAPI):
-    """Document manually validated bodies without changing their runtime error contract."""
+    """Build the OpenAPI schema and retain the explicit CSV upload shape."""
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -42,11 +42,6 @@ def build_openapi_schema(app: FastAPI):
     if "$ref" in csv_body_schema:
         csv_body_schema = schemas[csv_body_schema["$ref"].rsplit("/", 1)[-1]]
     csv_body_schema["properties"]["file"]["format"] = "binary"
-
-    for path_item in schema["paths"].values():
-        for operation in path_item.values():
-            if isinstance(operation, dict):
-                operation.get("responses", {}).pop("422", None)
 
     app.openapi_schema = schema
     return app.openapi_schema

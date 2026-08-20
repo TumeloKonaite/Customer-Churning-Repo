@@ -7,8 +7,10 @@ from pathlib import Path
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 from src.schemas.batch_prediction import MAX_BATCH_SIZE
+from src.schemas.prediction import SinglePredictionRequest
 from src.services import batch_prediction_service, model_service, single_prediction_service
 from src.services.exceptions import APIServiceError
 
@@ -110,7 +112,8 @@ def predict_datapoint(
         try:
             # Preserve the form's historical readiness-before-validation behavior.
             model_service.ensure_artifacts_ready()
-            result = single_prediction_service.predict_single(form_data)
+            validated_form = SinglePredictionRequest.model_validate_strings(form_data)
+            result = single_prediction_service.predict_single(validated_form)
             context["results"] = (
                 "Customer is predicted to churn"
                 if result["predicted_label"] == 1
@@ -126,5 +129,9 @@ def predict_datapoint(
                 )
             else:
                 context["error"] = exc.message
+        except ValidationError as exc:
+            context["error"] = "; ".join(
+                f"{error['loc'][-1]}: {error['msg']}" for error in exc.errors()
+            )
 
     return templates.TemplateResponse(request=request, name="home.html", context=context)

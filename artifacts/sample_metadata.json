@@ -1,6 +1,7 @@
 {
   "trained_at": "2026-02-01T00:00:00Z",
   "model_name": "churn_predictor",
+  "version": "1.0.0",
   "model_path": "artifacts/model.pkl",
   "metrics": {
     "roc_auc": 0.86,
@@ -9,23 +10,121 @@
     "f1": 0.68
   },
   "feature_schema": {
+    "schema_version": "1.0.0",
     "raw_features": [
-      {"name": "CreditScore", "dtype": "int64"},
-      {"name": "Geography", "dtype": "object"},
-      {"name": "Gender", "dtype": "object"},
-      {"name": "Age", "dtype": "int64"}
+      {
+        "name": "CreditScore",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "Geography",
+        "data_type": "string",
+        "required": true,
+        "nullable": false,
+        "feature_type": "categorical",
+        "accepted_values": null,
+        "unseen_value_policy": "OneHotEncoder(handle_unknown='ignore')",
+        "known_training_values": ["France", "Germany", "Spain"],
+        "transformation_owner": "pipeline.preprocessor.categorical.imputer_and_encoder"
+      },
+      {
+        "name": "Gender",
+        "data_type": "string",
+        "required": true,
+        "nullable": false,
+        "feature_type": "categorical",
+        "accepted_values": null,
+        "unseen_value_policy": "OneHotEncoder(handle_unknown='ignore')",
+        "known_training_values": ["Female", "Male"],
+        "transformation_owner": "pipeline.preprocessor.categorical.imputer_and_encoder"
+      },
+      {
+        "name": "Age",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "Tenure",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "Balance",
+        "data_type": "number",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "NumOfProducts",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "HasCrCard",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "IsActiveMember",
+        "data_type": "integer",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      },
+      {
+        "name": "EstimatedSalary",
+        "data_type": "number",
+        "required": true,
+        "nullable": false,
+        "feature_type": "numeric",
+        "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+      }
     ],
     "input_columns": [
       "CreditScore",
       "Geography",
       "Gender",
-      "Age"
+      "Age",
+      "Tenure",
+      "Balance",
+      "NumOfProducts",
+      "HasCrCard",
+      "IsActiveMember",
+      "EstimatedSalary"
     ],
     "transformed_columns": [
       "CreditScore",
       "Age",
+      "Tenure",
+      "Balance",
+      "NumOfProducts",
+      "HasCrCard",
+      "IsActiveMember",
+      "EstimatedSalary",
       "Geography_France",
-      "Gender_Female"
+      "Geography_Germany",
+      "Geography_Spain",
+      "Gender_Female",
+      "Gender_Male"
     ]
   }
 }

@@ -1,140 +1,92 @@
-import json
-import os
-import sys
-from dataclasses import dataclass
+"""Raw split loading and unfitted preprocessing construction."""
 
-import numpy as np
+from __future__ import annotations
+
+import sys
+
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.exception import CustomException
 from src.logger import logging
-from src.utils import save_object
+from src.model_schema import (
+    CANONICAL_FEATURE_ORDER,
+    CATEGORICAL_COLUMNS,
+    IDENTIFIER_COLUMNS,
+    NUMERIC_COLUMNS,
+    TARGET_COLUMN,
+)
 
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
+def build_preprocessor() -> ColumnTransformer:
+    """Build a fresh preprocessor that is fitted only as part of a model pipeline."""
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            (
+                "encoder",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+            ),
+        ]
+    )
+    return ColumnTransformer(
+        transformers=[
+            ("numeric", numeric_pipeline, NUMERIC_COLUMNS),
+            ("categorical", categorical_pipeline, CATEGORICAL_COLUMNS),
+        ],
+        remainder="drop",
+        verbose_feature_names_out=False,
+    )
 
 
-@dataclass
-class DataTransformationConfig:
-    preprocessor_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "preprocessor.pkl")
-    encoder_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "encoder.pkl")
-    schema_file_path: str = os.path.join(ARTIFACTS_DIR, "schema.json")
-    feature_columns_file_path: str = os.path.join(ARTIFACTS_DIR, "feature_columns.json")
+def build_model_pipeline(classifier) -> Pipeline:
+    """Build the single executable training-and-serving artifact."""
+    return Pipeline(
+        steps=[
+            ("preprocessor", build_preprocessor()),
+            ("classifier", classifier),
+        ]
+    )
 
 
 class DataTransformation:
-    def __init__(self):
-        self.data_transformation_config = DataTransformationConfig()
-        self.target_column_name = "Exited"
-        self.numerical_columns = [
-            "CreditScore",
-            "Age",
-            "Tenure",
-            "Balance",
-            "NumOfProducts",
-            "HasCrCard",
-            "IsActiveMember",
-            "EstimatedSalary",
-        ]
-        self.categorical_columns = ["Geography", "Gender"]
+    """Load raw train/test frames without fitting any transformation."""
 
     def initiate_data_transformation(self, train_path, test_path):
         try:
             train_df = pd.read_csv(train_path)
             test_df = pd.read_csv(test_path)
+            logging.info("Read raw train and test splits")
 
-            logging.info("Read train and test data completed")
+            required = CANONICAL_FEATURE_ORDER + [TARGET_COLUMN]
+            for split_name, frame in (("training", train_df), ("test", test_df)):
+                missing = [column for column in required if column not in frame.columns]
+                if missing:
+                    raise ValueError(
+                        f"Missing required columns in {split_name} split: {missing}"
+                    )
 
-            # Drop identifier columns if present
-            drop_cols = ["RowNumber", "CustomerId", "Surname"]
-            train_df = train_df.drop(columns=[c for c in drop_cols if c in train_df.columns])
-            test_df = test_df.drop(columns=[c for c in drop_cols if c in test_df.columns])
-
-            target_column_name = self.target_column_name
-            feature_columns = self.numerical_columns + self.categorical_columns
-            feature_schema = [
-                {"name": col, "dtype": str(train_df[col].dtype)}
-                for col in feature_columns
-            ]
-
-            missing_cols = [col for col in feature_columns if col not in train_df.columns]
-            if missing_cols:
-                raise CustomException(
-                    f"Missing required columns for transformation: {missing_cols}", sys
-                )
-
-            input_feature_train_df = train_df[feature_columns].copy()
-            target_feature_train_df = train_df[target_column_name]
-
-            input_feature_test_df = test_df[feature_columns].copy()
-            target_feature_test_df = test_df[target_column_name]
-
-            logging.info("Applying StandardScaler and OneHotEncoder as per notebook.")
-
-            imputer = SimpleImputer(strategy="median")
-            input_feature_train_df[self.numerical_columns] = imputer.fit_transform(
-                input_feature_train_df[self.numerical_columns]
+            train_df = train_df.drop(
+                columns=[column for column in IDENTIFIER_COLUMNS if column in train_df.columns]
             )
-            input_feature_test_df[self.numerical_columns] = imputer.transform(
-                input_feature_test_df[self.numerical_columns]
+            test_df = test_df.drop(
+                columns=[column for column in IDENTIFIER_COLUMNS if column in test_df.columns]
             )
-
-            scaler = StandardScaler()
-            train_num = scaler.fit_transform(
-                input_feature_train_df[self.numerical_columns]
-            )
-            test_num = scaler.transform(input_feature_test_df[self.numerical_columns])
-
-            encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-            train_cat = encoder.fit_transform(
-                input_feature_train_df[self.categorical_columns]
-            )
-            test_cat = encoder.transform(input_feature_test_df[self.categorical_columns])
-
-            input_feature_train_arr = np.hstack([train_num, train_cat])
-            input_feature_test_arr = np.hstack([test_num, test_cat])
-
-            feature_names = list(self.numerical_columns) + list(
-                encoder.get_feature_names_out(self.categorical_columns)
-            )
-
-            train_arr = np.c_[input_feature_train_arr, np.array(target_feature_train_df)]
-            test_arr = np.c_[input_feature_test_arr, np.array(target_feature_test_df)]
-
-            logging.info("Saving scaler, encoder, and schema artifacts.")
-
-            os.makedirs(os.path.dirname(self.data_transformation_config.schema_file_path), exist_ok=True)
-
-            save_object(
-                file_path=self.data_transformation_config.preprocessor_obj_file_path,
-                obj=scaler,
-            )
-
-            save_object(
-                file_path=self.data_transformation_config.encoder_obj_file_path,
-                obj=encoder,
-            )
-
-            schema = {
-                "num_cols": self.numerical_columns,
-                "all_cols": feature_columns,
-                "feature_schema": feature_schema,
-            }
-            with open(self.data_transformation_config.schema_file_path, "w") as f:
-                json.dump(schema, f)
-
-            with open(
-                self.data_transformation_config.feature_columns_file_path, "w"
-            ) as f:
-                json.dump(feature_names, f)
 
             return (
-                train_arr,
-                test_arr,
-                self.data_transformation_config.preprocessor_obj_file_path,
+                train_df[CANONICAL_FEATURE_ORDER].copy(),
+                train_df[TARGET_COLUMN].copy(),
+                test_df[CANONICAL_FEATURE_ORDER].copy(),
+                test_df[TARGET_COLUMN].copy(),
             )
-        except Exception as e:
-            raise CustomException(e, sys)
+        except Exception as exc:
+            raise CustomException(exc, sys) from exc

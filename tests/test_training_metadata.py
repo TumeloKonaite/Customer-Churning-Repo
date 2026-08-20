@@ -7,13 +7,13 @@ from src.train import build_metadata, load_feature_schema, write_metadata
 def test_metadata_written():
     with tempfile.TemporaryDirectory() as tmpdir:
         schema = {
-            "feature_schema": [{"name": "Age", "dtype": "int64"}],
-            "all_cols": ["Age"],
+            "schema_version": "1.0.0",
+            "features": [{"name": "Age", "data_type": "integer"}],
+            "canonical_feature_order": ["Age"],
+            "transformed_feature_names": ["Age"],
         }
         with open(os.path.join(tmpdir, "schema.json"), "w") as f:
             json.dump(schema, f)
-        with open(os.path.join(tmpdir, "feature_columns.json"), "w") as f:
-            json.dump(["Age"], f)
 
         feature_schema = load_feature_schema(tmpdir)
         metadata = build_metadata(
@@ -29,5 +29,6 @@ def test_metadata_written():
         with open(metadata_path, "r") as f:
             loaded = json.load(f)
         assert loaded["model_name"] == "TestModel"
+        assert loaded["version"] == "1.0.0"
         assert "feature_schema" in loaded
         assert "metrics" in loaded

@@ -5,26 +5,26 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import logging
-import re
 from typing import Any, BinaryIO
 
 import pandas as pd
+from pydantic import ValidationError
 
 from src.pipeline.prediction_pipeline import PredictPipeline
-from src.schemas.batch_prediction import MAX_BATCH_SIZE, VALID_BATCH_MODES
+from src.schemas.batch_prediction import (
+    MAX_BATCH_SIZE,
+    VALID_BATCH_MODES,
+    BatchOptions,
+    BatchPredictionRecord,
+)
 from src.schemas.prediction import REQUIRED_FIELDS
 from src.services import model_service
-from src.services.exceptions import (
-    APIServiceError,
-    BatchContractViolation,
-    PredictionExecutionError,
-)
-from src.services.prediction_validation import validate_record
+from src.services.exceptions import BatchContractViolation, PredictionExecutionError
+from src.services.prediction_validation import validate_record, validation_error_details
 
 
 logger = logging.getLogger(__name__)
-_MISSING_FIELD_RE = re.compile(r"^Missing required field: (?P<field>.+)$")
-_NUMERIC_FIELD_RE = re.compile(r"^Field '(?P<field>[^']+)' must be a number")
+IDENTIFIER_FIELDS = {"customer_id", "row_id", "id"}
 
 
 def _timestamp_now() -> str:
@@ -37,10 +37,12 @@ def _load_model_metadata() -> dict[str, str]:
 
 
 def _extract_record_id(record: Any) -> Any | None:
+    if isinstance(record, BatchPredictionRecord):
+        record = record.model_dump()
     if not isinstance(record, dict):
         return None
     for key in ("customer_id", "row_id", "id"):
-        if key in record and record[key] is not None:
+        if key in record and record[key] is not None and not pd.isna(record[key]):
             return record[key]
     return None
 
@@ -56,7 +58,7 @@ def _build_batch_envelope(*, status, results, errors, summary):
     }
 
 
-def validate_batch(records: list[dict], mode: str) -> dict:
+def validate_batch(records: list[Any], mode: str) -> dict:
     if mode not in VALID_BATCH_MODES:
         raise ValueError(f"Unsupported batch mode: {mode}")
 
@@ -64,21 +66,18 @@ def validate_batch(records: list[dict], mode: str) -> dict:
     for row_index, record in enumerate(records):
         record_id = _extract_record_id(record)
         result["row_ids"][row_index] = record_id
-        ok, errors, coerced = validate_record(record)
+        ok, errors, coerced = validate_record(record, allow_identifiers=True)
         if ok:
             valid_index = len(result["valid_rows"])
             result["valid_rows"].append(coerced)
             result["row_map"][valid_index] = row_index
             continue
 
-        for message in errors:
+        details = validation_error_details(record, allow_identifiers=True)
+        for error_index, message in enumerate(errors):
             error = {"row_index": row_index, "id": record_id, "message": message}
-            missing_match = _MISSING_FIELD_RE.match(message)
-            numeric_match = _NUMERIC_FIELD_RE.match(message)
-            if missing_match:
-                error["field"] = missing_match.group("field")
-            elif numeric_match:
-                error["field"] = numeric_match.group("field")
+            if error_index < len(details) and details[error_index][1] is not None:
+                error["field"] = details[error_index][1]
             result["errors"].append(error)
         if mode == "fail_fast":
             break
@@ -91,6 +90,8 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         raise ValueError("Field 'records' must be a list")
     if len(records) > MAX_BATCH_SIZE:
         raise ValueError(f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})")
+    if isinstance(options, BatchOptions):
+        options = options.model_dump()
     if options is None:
         options = {}
     if not isinstance(options, dict):
@@ -118,7 +119,9 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
         status = "failed" if errors else "success"
         return _build_batch_envelope(status=status, results=[], errors=errors, summary=summary)
 
-    labels, probabilities = PredictPipeline().predict(pd.DataFrame(valid_rows, columns=REQUIRED_FIELDS))
+    labels, probabilities = PredictPipeline().predict(
+        pd.DataFrame(valid_rows, columns=REQUIRED_FIELDS)
+    )
     labels = list(labels)
     probabilities = list(probabilities) if probabilities is not None else [None] * len(labels)
     if len(labels) != len(valid_rows):
@@ -146,27 +149,6 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
     )
 
 
-def validate_batch_payload(payload: Any) -> tuple[list, dict]:
-    if payload is None:
-        raise APIServiceError("Invalid JSON body")
-    if not isinstance(payload, dict):
-        raise APIServiceError("JSON body must be an object")
-    if "records" not in payload:
-        raise BatchContractViolation("Field 'records' is required and must be a list")
-
-    records = payload.get("records")
-    if not isinstance(records, list):
-        raise BatchContractViolation("Field 'records' must be a list")
-    if len(records) > MAX_BATCH_SIZE:
-        raise BatchContractViolation(
-            f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})", status_code=413
-        )
-    options = payload.get("options", {})
-    if not isinstance(options, dict):
-        raise BatchContractViolation("Field 'options' must be an object")
-    return records, options
-
-
 def predict_batch(records: list, options: dict) -> dict[str, Any]:
     """Check readiness and execute a validated JSON or CSV batch."""
     mode = options.get("mode", "fail_fast")
@@ -182,11 +164,6 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
         raise PredictionExecutionError(f"Internal server error: {exc}") from exc
 
 
-def predict_batch_payload(payload: Any) -> dict[str, Any]:
-    records, options = validate_batch_payload(payload)
-    return predict_batch(records, options)
-
-
 def parse_batch_options_json(options_raw: str | None) -> dict:
     if options_raw is None or not str(options_raw).strip():
         return {}
@@ -196,7 +173,10 @@ def parse_batch_options_json(options_raw: str | None) -> dict:
         raise BatchContractViolation(f"Invalid options JSON: {exc.msg}") from exc
     if not isinstance(options, dict):
         raise BatchContractViolation("Field 'options' must be an object")
-    return options
+    try:
+        return BatchOptions.model_validate(options).model_dump()
+    except ValidationError as exc:
+        raise BatchContractViolation(f"Invalid batch options: {exc.errors()[0]['msg']}") from exc
 
 
 def parse_csv_upload_records(filename: str | None, file: BinaryIO | None) -> list[dict]:
@@ -221,6 +201,15 @@ def parse_csv_upload_records(filename: str | None, file: BinaryIO | None) -> lis
     if missing_columns:
         raise BatchContractViolation(
             f"CSV is missing required columns: {', '.join(missing_columns)}"
+        )
+    unexpected_columns = [
+        column
+        for column in frame.columns
+        if column not in REQUIRED_FIELDS and column not in IDENTIFIER_FIELDS
+    ]
+    if unexpected_columns:
+        raise BatchContractViolation(
+            f"CSV contains unexpected columns: {', '.join(unexpected_columns)}"
         )
 
     records = frame.to_dict(orient="records")

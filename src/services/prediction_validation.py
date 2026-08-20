@@ -1,43 +1,61 @@
-"""Shared validation and coercion for prediction records."""
+"""Pydantic-backed validation shared by non-HTTP and CSV prediction paths."""
+
+from __future__ import annotations
 
 from typing import Any
 
-from src.schemas.prediction import REQUIRED_FIELDS
+from pydantic import ValidationError
+
+from src.schemas.batch_prediction import BatchPredictionRecord
+from src.schemas.prediction import REQUIRED_FIELDS, SinglePredictionRequest
 
 
-NUMERIC_FIELDS = {
-    "CreditScore": float,
-    "Age": float,
-    "Tenure": float,
-    "Balance": float,
-    "NumOfProducts": float,
-    "HasCrCard": float,
-    "IsActiveMember": float,
-    "EstimatedSalary": float,
-}
+def _format_validation_error(error: dict) -> tuple[str, str | None]:
+    location = error.get("loc", ())
+    field = str(location[-1]) if location else None
+    error_type = error.get("type", "")
+    value = error.get("input")
+    if error_type == "missing":
+        return f"Missing required field: {field}", field
+    if error_type == "extra_forbidden":
+        return f"Unexpected field: {field}", field
+    if value is None:
+        return f"Field '{field}' must not be null", field
+    return f"Incorrect data type or value for field '{field}'", field
 
 
-def validate_record(record: Any) -> tuple[bool, list[str], dict | None]:
-    """Validate and coerce one prediction record."""
-    if not isinstance(record, dict):
+def validate_record(
+    record: Any, *, allow_identifiers: bool = True
+) -> tuple[bool, list[str], dict | None]:
+    """Validate one raw record and return canonical model features only."""
+    if not isinstance(record, (dict, BatchPredictionRecord, SinglePredictionRequest)):
         return False, ["Record must be a JSON object"], None
 
-    missing = [key for key in REQUIRED_FIELDS if record.get(key) in (None, "")]
-    if missing:
-        return False, [f"Missing required field: {key}" for key in missing], None
+    model_type = BatchPredictionRecord if allow_identifiers else SinglePredictionRequest
+    try:
+        validated = (
+            record
+            if isinstance(record, model_type)
+            else model_type.model_validate(record)
+        )
+    except ValidationError as exc:
+        messages = [_format_validation_error(error)[0] for error in exc.errors()]
+        return False, messages, None
 
-    coerced = {field: record.get(field) for field in REQUIRED_FIELDS}
-    errors = []
-    for key, caster in NUMERIC_FIELDS.items():
-        try:
-            coerced[key] = caster(coerced[key])
-        except (TypeError, ValueError):
-            errors.append(f"Field '{key}' must be a number (got {record.get(key)!r})")
-    if errors:
-        return False, errors, None
-    return True, [], coerced
+    dumped = validated.model_dump()
+    return True, [], {field: dumped[field] for field in REQUIRED_FIELDS}
+
+
+def validation_error_details(record: Any, *, allow_identifiers: bool = True):
+    """Return messages paired with fields for batch error envelopes."""
+    model_type = BatchPredictionRecord if allow_identifiers else SinglePredictionRequest
+    try:
+        model_type.model_validate(record)
+    except ValidationError as exc:
+        return [_format_validation_error(error) for error in exc.errors()]
+    return []
 
 
 def validate_payload(data: Any) -> tuple[bool, list[str] | None]:
-    ok, errors, _ = validate_record(data)
+    ok, errors, _ = validate_record(data, allow_identifiers=False)
     return ok, (errors or None)

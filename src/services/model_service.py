@@ -11,8 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 REQUIRED_ARTIFACTS = (
     ARTIFACTS_DIR / "schema.json",
-    ARTIFACTS_DIR / "preprocessor.pkl",
-    ARTIFACTS_DIR / "encoder.pkl",
     ARTIFACTS_DIR / "model.pkl",
 )
 

@@ -1,11 +1,12 @@
 import io
 
 import pytest
+from pydantic import ValidationError
 
-from src.schemas.batch_prediction import MAX_BATCH_SIZE
+from src.schemas.batch_prediction import MAX_BATCH_SIZE, BatchPredictionRequest
 from src.schemas.prediction import REQUIRED_FIELDS
 from src.services import batch_prediction_service, model_service, single_prediction_service
-from src.services.exceptions import APIServiceError, BatchContractViolation
+from src.services.exceptions import APIServiceError
 
 
 def valid_record():
@@ -57,15 +58,14 @@ def test_single_prediction_service_reports_all_missing_fields():
     ]
 
 
-def test_batch_payload_validation_preserves_contract_errors():
-    with pytest.raises(BatchContractViolation, match="Field 'records' is required"):
-        batch_prediction_service.validate_batch_payload({})
+def test_batch_payload_validation_uses_the_pydantic_contract():
+    with pytest.raises(ValidationError):
+        BatchPredictionRequest.model_validate({})
 
-    with pytest.raises(BatchContractViolation) as caught:
-        batch_prediction_service.validate_batch_payload(
+    with pytest.raises(ValidationError):
+        BatchPredictionRequest.model_validate(
             {"records": [valid_record()] * (MAX_BATCH_SIZE + 1)}
         )
-    assert caught.value.status_code == 413
 
 
 def test_csv_parser_uses_the_canonical_prediction_fields():
