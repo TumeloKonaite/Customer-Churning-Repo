@@ -272,11 +272,15 @@ def test_integrity_publication_logs_completion_marker_last(tmp_path):
         def set_model_version_tag(self, name, version, key, value):
             events.append(("version_tag", key, value))
 
+    def download_run_artifacts(**kwargs):
+        assert kwargs["run_id"] == "run-1"
+        assert kwargs["artifact_path"] == ""
+        assert Path(kwargs["dst_path"]).name == "run"
+        return str(run_root)
+
     mlflow = SimpleNamespace(
         __version__="3.1.0",
-        artifacts=SimpleNamespace(
-            download_artifacts=lambda **kwargs: str(run_root)
-        ),
+        artifacts=SimpleNamespace(download_artifacts=download_run_artifacts),
         sklearn=SimpleNamespace(
             load_model=lambda path: SimpleNamespace(predict=lambda frame: [0])
         ),

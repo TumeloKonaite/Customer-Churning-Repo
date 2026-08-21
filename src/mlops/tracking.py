@@ -317,7 +317,9 @@ class ExperimentTracker:
             temp = Path(temporary)
             run_root = Path(
                 mlflow.artifacts.download_artifacts(
-                    artifact_uri=f"runs:/{run_id}", dst_path=str(temp / "run")
+                    run_id=run_id,
+                    artifact_path="",
+                    dst_path=str(temp / "run"),
                 )
             )
             bundle = temp / "bundle"
