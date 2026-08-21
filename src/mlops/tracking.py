@@ -5,11 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import hashlib
 import importlib
+import json
 import math
 import os
 import platform
 from pathlib import Path
+import shutil
 import subprocess
+import tempfile
 from typing import Any
 
 import numpy as np
@@ -41,6 +44,8 @@ class TrackingResult:
     registered_model_version: str | None = None
     model_version_id: str | None = None
     pipeline_sha256: str | None = None
+    artifact_manifest_sha256: str | None = None
+    integrity_status: str | None = None
     warning: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
@@ -94,6 +99,9 @@ class ExperimentTracker:
 
         try:
             mlflow = importlib.import_module("mlflow")
+            from src.mlops.integrity import validate_publication_source_artifacts
+
+            validate_publication_source_artifacts(training.artifact_dir)
             configure_tracking_backend(self.settings)
             mlflow.set_experiment(self.settings.experiment_name)
             example = pd.DataFrame(
@@ -198,26 +206,66 @@ class ExperimentTracker:
         )
         version = str(registration.version)
         contracts = config["contracts"]
+        identity = model_version_id(
+            self.settings.dagshub_repo_owner or "",
+            self.settings.dagshub_repo_name or "",
+            self.settings.registered_model_name,
+            version,
+        )
         tags = {
             "training_run_id": run_id,
             "source_commit_sha": lineage["source_commit_sha"],
             "feature_schema_version": contracts["feature_schema_version"],
             "prediction_contract_version": contracts["prediction_contract_version"],
+            "prediction_horizon_contract_version": contracts[
+                "prediction_horizon_version"
+            ],
+            "identity_privacy_contract_version": contracts[
+                "identity_privacy_contract_version"
+            ],
+            "monitoring_contract_version": contracts["monitoring_contract_version"],
             "positive_class": "1",
             "classification_threshold": str(training.threshold),
             "validation_status": "validated",
             "pipeline_sha256": checksum,
         }
-        for key, value in tags.items():
+        try:
+            client.set_tag(run_id, "integrity_status", "incomplete")
             client.set_model_version_tag(
-                self.settings.registered_model_name, version, key, value
+                self.settings.registered_model_name,
+                version,
+                "integrity_status",
+                "incomplete",
             )
-        example = pd.DataFrame(
-            [SINGLE_PREDICTION_EXAMPLE], columns=CANONICAL_FEATURE_ORDER
-        )
-        mlflow.sklearn.load_model(
-            f"models:/{self.settings.registered_model_name}/{version}"
-        ).predict(example)
+            for key, value in tags.items():
+                client.set_model_version_tag(
+                    self.settings.registered_model_name, version, key, value
+                )
+            manifest_checksum = self._publish_integrity(
+                mlflow=mlflow,
+                client=client,
+                model_uri=model_uri,
+                model_dir=model_dir,
+                run_id=run_id,
+                version=version,
+                identity=identity,
+                checksum=checksum,
+                training=training,
+                config=config,
+                lineage=lineage,
+            )
+        except Exception:
+            try:
+                client.set_tag(run_id, "integrity_status", "incomplete")
+                client.set_model_version_tag(
+                    self.settings.registered_model_name,
+                    version,
+                    "integrity_status",
+                    "incomplete",
+                )
+            except Exception:
+                pass
+            raise
         return TrackingResult(
             status="registered",
             artifact_dir=str(training.artifact_dir),
@@ -229,14 +277,177 @@ class ExperimentTracker:
             run_id=run_id,
             registered_model_name=self.settings.registered_model_name,
             registered_model_version=version,
-            model_version_id=model_version_id(
-                self.settings.dagshub_repo_owner or "",
-                self.settings.dagshub_repo_name or "",
+            model_version_id=identity,
+            pipeline_sha256=checksum,
+            artifact_manifest_sha256=manifest_checksum,
+            integrity_status="complete",
+        )
+
+    def _publish_integrity(
+        self,
+        *,
+        mlflow,
+        client,
+        model_uri: str,
+        model_dir: Path,
+        run_id: str,
+        version: str,
+        identity: str,
+        checksum: str,
+        training: ModelTrainingResult,
+        config: dict,
+        lineage: dict[str, str],
+    ) -> str:
+        """Publish a verified manifest and log the completion marker last."""
+        from src.mlops.integrity import (
+            COMPLETION_MARKER_ARTIFACT_PATH,
+            MANIFEST_ARTIFACT_PATH,
+            MANIFEST_SCHEMA_VERSION,
+            artifact_manifest_checksum,
+            build_artifact_manifest,
+            build_completion_marker,
+            build_protected_artifact_entries,
+            canonical_json_bytes,
+            verify_completion_marker,
+            verify_protected_artifacts,
+        )
+        from src.mlops.registry import pipeline_checksum
+
+        with tempfile.TemporaryDirectory(prefix="publish-churn-integrity-") as temporary:
+            temp = Path(temporary)
+            run_root = Path(
+                mlflow.artifacts.download_artifacts(
+                    artifact_uri=f"runs:/{run_id}", dst_path=str(temp / "run")
+                )
+            )
+            bundle = temp / "bundle"
+            shutil.copytree(run_root, bundle)
+            bundled_model = bundle / "model"
+            if bundled_model.exists():
+                shutil.rmtree(bundled_model)
+            shutil.copytree(model_dir, bundled_model)
+            if pipeline_checksum(bundled_model) != checksum:
+                raise ValueError("Downloaded MLflow model changed before integrity publication")
+
+            entries = build_protected_artifact_entries(bundle)
+            identities = json.loads(
+                (bundle / "lineage" / "dataset_identities.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            contracts = config["contracts"]
+            manifest = build_artifact_manifest(
+                repository_owner=self.settings.dagshub_repo_owner or "",
+                repository_name=self.settings.dagshub_repo_name or "",
+                experiment_name=self.settings.experiment_name,
+                run_id=run_id,
+                model_name=self.settings.registered_model_name,
+                model_version=version,
+                model_version_id=identity,
+                source_commit_sha=lineage["source_commit_sha"],
+                source_branch=lineage.get("source_branch", "unknown"),
+                source_worktree_dirty=(
+                    lineage.get("source_worktree_dirty", "false").lower() == "true"
+                ),
+                selected_classifier_name=training.model_name,
+                selection_metric=config["model"].get("selection_metric", "roc_auc"),
+                feature_schema_version=contracts["feature_schema_version"],
+                prediction_contract_version=contracts["prediction_contract_version"],
+                prediction_horizon_contract_version=contracts[
+                    "prediction_horizon_version"
+                ],
+                identity_privacy_contract_version=contracts[
+                    "identity_privacy_contract_version"
+                ],
+                monitoring_contract_version=contracts["monitoring_contract_version"],
+                training_dataset_identity=identities["training"],
+                classification_threshold=training.threshold,
+                positive_class=1,
+                python_version=lineage.get("python_version", platform.python_version()),
+                scikit_learn_version=sklearn.__version__,
+                mlflow_version=getattr(mlflow, "__version__", "unknown"),
+                pipeline_sha256=checksum,
+                protected_artifacts=entries,
+            )
+            manifest_checksum = artifact_manifest_checksum(manifest)
+            integrity_dir = temp / "integrity"
+            integrity_dir.mkdir()
+            manifest_path = integrity_dir / "artifact_manifest.json"
+            manifest_path.write_bytes(canonical_json_bytes(manifest))
+            client.log_artifact(run_id, str(manifest_path), artifact_path="integrity")
+            published_manifest_path = Path(
+                client.download_artifacts(
+                    run_id,
+                    MANIFEST_ARTIFACT_PATH,
+                    str(temp / "published-manifest"),
+                )
+            )
+            published_manifest = json.loads(
+                published_manifest_path.read_text(encoding="utf-8")
+            )
+            if artifact_manifest_checksum(published_manifest) != manifest_checksum:
+                raise ValueError("Published artifact manifest failed verification")
+
+            integrity_tags = {
+                "artifact_manifest_schema_version": MANIFEST_SCHEMA_VERSION,
+                "artifact_manifest_sha256": manifest_checksum,
+            }
+            for key, value in integrity_tags.items():
+                client.set_tag(run_id, key, value)
+                client.set_model_version_tag(
+                    self.settings.registered_model_name, version, key, value
+                )
+
+            verify_protected_artifacts(
+                manifest,
+                lambda path: bundle.joinpath(*path.split("/")),
+            )
+            example = pd.DataFrame(
+                [SINGLE_PREDICTION_EXAMPLE], columns=CANONICAL_FEATURE_ORDER
+            )
+            mlflow.sklearn.load_model(str(bundled_model)).predict(example)
+            mlflow.sklearn.load_model(
+                f"models:/{self.settings.registered_model_name}/{version}"
+            ).predict(example)
+
+            marker = build_completion_marker(
+                model_name=self.settings.registered_model_name,
+                model_version=version,
+                model_version_id=identity,
+                run_id=run_id,
+                pipeline_sha256=checksum,
+                artifact_manifest_sha256=manifest_checksum,
+            )
+            verify_completion_marker(
+                marker, manifest, manifest_checksum=manifest_checksum
+            )
+            marker_path = integrity_dir / "publication_complete.json"
+            marker_path.write_bytes(canonical_json_bytes(marker))
+            # This is intentionally the final artifact write for the publication.
+            client.log_artifact(run_id, str(marker_path), artifact_path="integrity")
+            published_marker_path = Path(
+                client.download_artifacts(
+                    run_id,
+                    COMPLETION_MARKER_ARTIFACT_PATH,
+                    str(temp / "published-marker"),
+                )
+            )
+            published_marker = json.loads(
+                published_marker_path.read_text(encoding="utf-8")
+            )
+            verify_completion_marker(
+                published_marker,
+                published_manifest,
+                manifest_checksum=manifest_checksum,
+            )
+            client.set_tag(run_id, "integrity_status", "complete")
+            client.set_model_version_tag(
                 self.settings.registered_model_name,
                 version,
-            ),
-            pipeline_sha256=checksum,
-        )
+                "integrity_status",
+                "complete",
+            )
+            return manifest_checksum
 
     @staticmethod
     def _parameters(

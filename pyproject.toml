@@ -10,6 +10,7 @@ dependencies = [
     "fastapi",
     "httpx",
     "jinja2",
+    "jsonschema>=4.23,<5",
     "mlflow>=3.1,<4",
     "modal",
     "numpy",

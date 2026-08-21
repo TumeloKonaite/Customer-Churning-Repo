@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import shutil
@@ -28,6 +29,7 @@ from src.model_schema import CANONICAL_FEATURE_ORDER, reject_prohibited_columns
 
 DEPLOYMENT_METADATA_FILENAME = "deployment_metadata.json"
 MODEL_DIRECTORY_NAME = "model"
+logger = logging.getLogger(__name__)
 
 
 def _write_package(
@@ -72,6 +74,8 @@ def _write_package(
         "mlflow_run_id": validation.mlflow_run_id,
         "source_commit_sha": validation.source_commit_sha,
         "pipeline_sha256": validation.pipeline_sha256,
+        "artifact_manifest_sha256": validation.artifact_manifest_sha256,
+        "integrity_status": validation.integrity_status,
         "application_version": application_version,
         "feature_schema_version": validation.feature_schema_version,
         "validation_status": "validated",
@@ -89,6 +93,7 @@ def prepare_deployment(
     mlflow_settings: DagsHubSettings | None = None,
     expected_run_id: str | None = None,
     expected_pipeline_sha256: str | None = None,
+    expected_artifact_manifest_sha256: str | None = None,
     expected_model_version_id: str | None = None,
     environment: str = "production",
     application_version: str = "0.1.0",
@@ -99,13 +104,27 @@ def prepare_deployment(
     if output.exists() and any(output.iterdir()):
         raise ValueError(f"Deployment output directory must be absent or empty: {output}")
     output.parent.mkdir(parents=True, exist_ok=True)
+    if not expected_artifact_manifest_sha256:
+        raise ValueError(
+            "EXPECTED_ARTIFACT_MANIFEST_SHA256 is required for deployment preparation"
+        )
     settings = mlflow_settings or DagsHubSettings()
     validation = validate_registered_model(
         model_uri,
         settings=settings,
         expected_run_id=expected_run_id,
         expected_pipeline_sha256=expected_pipeline_sha256,
+        expected_artifact_manifest_sha256=expected_artifact_manifest_sha256,
     )
+    if validation.integrity_status != "complete":
+        raise ValueError("Legacy or incomplete model versions are not deployment-eligible")
+    if (
+        validation.artifact_manifest_sha256
+        != expected_artifact_manifest_sha256.lower()
+    ):
+        raise ValueError(
+            "Registered model manifest does not match EXPECTED_ARTIFACT_MANIFEST_SHA256"
+        )
     if (
         expected_model_version_id is not None
         and validation.model_version_id != expected_model_version_id
@@ -139,7 +158,8 @@ def load_deployment_metadata(package_dir: str | Path) -> dict[str, Any]:
         "deployment_id", "environment", "deployment_timestamp_utc", "modal_application",
         "model_name", "model_version", "model_version_id", "mlflow_run_id",
         "source_commit_sha", "pipeline_sha256", "application_version",
-        "feature_schema_version", "validation_status",
+        "artifact_manifest_sha256", "integrity_status", "feature_schema_version",
+        "validation_status",
     }
     missing = sorted(required - set(metadata))
     if missing:
@@ -169,6 +189,8 @@ def validate_packaged_model(
             "mlflow_run_id": expected.expected_run_id,
             "model_version_id": expected.expected_model_version_id,
             "pipeline_sha256": expected.expected_pipeline_sha256,
+            "artifact_manifest_sha256": expected.expected_artifact_manifest_sha256,
+            "integrity_status": "complete",
             "environment": expected.environment.value,
         }
     else:
@@ -179,6 +201,13 @@ def validate_packaged_model(
     actual_checksum = pipeline_checksum(model_dir)
     if actual_checksum != metadata["pipeline_sha256"]:
         raise ValueError("Packaged pipeline checksum mismatch")
+    manifest_checksum = str(metadata["artifact_manifest_sha256"]).lower()
+    if len(manifest_checksum) != 64 or any(
+        character not in "0123456789abcdef" for character in manifest_checksum
+    ):
+        raise ValueError("Packaged artifact manifest checksum is invalid")
+    if metadata["integrity_status"] != "complete":
+        raise ValueError("Packaged model publication is not integrity-complete")
     schema = json.loads(contract_path.read_text(encoding="utf-8"))
     if schema.get("schema_version") != metadata["feature_schema_version"]:
         raise ValueError("Packaged feature contract version mismatch")
@@ -198,4 +227,17 @@ def validate_packaged_model(
 def validate_production_startup(package_dir: str | Path | None = None) -> dict[str, Any]:
     settings = DeploymentSettings()
     package = package_dir or settings.deployment_package_dir
-    return validate_packaged_model(package, expected=settings)
+    metadata = validate_packaged_model(package, expected=settings)
+    logger.info(
+        "deployment_startup_verified deployment_id=%s model_version=%s "
+        "mlflow_run_id=%s model_version_id=%s pipeline_sha256=%s "
+        "artifact_manifest_sha256=%s integrity_status=%s",
+        metadata["deployment_id"],
+        metadata["model_version"],
+        metadata["mlflow_run_id"],
+        metadata["model_version_id"],
+        metadata["pipeline_sha256"],
+        metadata["artifact_manifest_sha256"],
+        metadata["integrity_status"],
+    )
+    return metadata

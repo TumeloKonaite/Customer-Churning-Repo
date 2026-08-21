@@ -39,6 +39,19 @@ def predict_single(payload: Any) -> dict[str, Any]:
     try:
         label, probability = _predict_one(request)
         metadata = model_service.prediction_metadata()
+        operational = model_service.operational_metadata()
+        logger.info(
+            "prediction_completed deployment_id=%s model_version=%s mlflow_run_id=%s "
+            "model_version_id=%s pipeline_sha256=%s artifact_manifest_sha256=%s "
+            "integrity_status=%s",
+            operational.get("deployment_id"),
+            operational.get("model_version"),
+            operational.get("mlflow_run_id"),
+            operational.get("model_version_id"),
+            operational.get("pipeline_sha256"),
+            operational.get("artifact_manifest_sha256"),
+            operational.get("integrity_status"),
+        )
     except Exception as exc:
         logger.exception("Single prediction failed")
         raise PredictionExecutionError(f"Internal server error: {exc}") from exc

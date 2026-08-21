@@ -18,12 +18,14 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("--model-uri", required=True)
     validate.add_argument("--expected-run-id")
     validate.add_argument("--expected-pipeline-sha256")
+    validate.add_argument("--expected-artifact-manifest-sha256")
     validate.add_argument("--output", choices=("text", "json"), default="text")
     prepare = commands.add_parser("prepare-deployment")
     prepare.add_argument("--model-uri", required=True)
     prepare.add_argument("--output-dir", required=True)
     prepare.add_argument("--expected-run-id")
     prepare.add_argument("--expected-pipeline-sha256")
+    prepare.add_argument("--expected-artifact-manifest-sha256", required=True)
     prepare.add_argument("--expected-model-version-id")
     prepare.add_argument("--environment", default="production")
     prepare.add_argument("--output", choices=("text", "json"), default="text")
@@ -38,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
                 args.model_uri,
                 expected_run_id=args.expected_run_id,
                 expected_pipeline_sha256=args.expected_pipeline_sha256,
+                expected_artifact_manifest_sha256=(
+                    args.expected_artifact_manifest_sha256
+                ),
             ).as_dict()
         else:
             result = prepare_deployment(
@@ -45,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
                 args.output_dir,
                 expected_run_id=args.expected_run_id,
                 expected_pipeline_sha256=args.expected_pipeline_sha256,
+                expected_artifact_manifest_sha256=(
+                    args.expected_artifact_manifest_sha256
+                ),
                 expected_model_version_id=args.expected_model_version_id,
                 environment=args.environment,
             )

@@ -1,11 +1,14 @@
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+import json
 
 import pandas as pd
 
 from src.config import DagsHubSettings
 from src.mlops.tracking import ExperimentTracker, configure_tracking_backend
+from src.mlops.integrity import REQUIRED_MODEL_FILES, REQUIRED_RUN_ARTIFACTS
+from src.mlops.registry import pipeline_checksum
 
 
 def _training(tmp_path: Path):
@@ -49,6 +52,9 @@ def _config():
         "contracts": {
             "feature_schema_version": "1.0.0",
             "prediction_contract_version": "1.0.0",
+            "prediction_horizon_version": "90-days-v1",
+            "identity_privacy_contract_version": "1.0.0",
+            "monitoring_contract_version": "1.0.0",
         },
     }
 
@@ -161,7 +167,7 @@ def test_dagshub_token_is_copied_only_when_user_token_is_absent(monkeypatch):
     assert __import__("os").environ["DAGSHUB_USER_TOKEN"] == "secret-token"
 
 
-def test_explicit_production_mode_registers_an_exact_version(tmp_path):
+def test_explicit_production_mode_registers_an_exact_version(tmp_path, monkeypatch):
     model_dir = tmp_path / "mlflow-model"
     model_dir.mkdir()
     (model_dir / "model.pkl").write_bytes(b"registered-model")
@@ -195,14 +201,118 @@ def test_explicit_production_mode_registers_an_exact_version(tmp_path):
         dagshub_repo_owner="owner",
         dagshub_repo_name="repo",
     )
-    result = ExperimentTracker(settings)._register(
+    tracker = ExperimentTracker(settings)
+    monkeypatch.setattr(tracker, "_publish_integrity", lambda **kwargs: "b" * 64)
+    result = tracker._register(
         mlflow,
         "models:/m-123",
         "run-1",
         _training(tmp_path),
         _config(),
-        {"source_commit_sha": "abc123"},
+        {
+            "source_commit_sha": "abc123",
+            "source_branch": "release-7",
+            "source_worktree_dirty": "false",
+            "python_version": "3.12.0",
+        },
     )
     assert result.status == "registered"
     assert result.registered_model_version == "7"
     assert result.model_version_id == "dagshub:owner/repo:churn_predictor:7"
+    assert result.artifact_manifest_sha256 == "b" * 64
+    assert result.integrity_status == "complete"
+
+
+def test_integrity_publication_logs_completion_marker_last(tmp_path):
+    run_root = tmp_path / "run"
+    model_dir = tmp_path / "mlflow-model"
+    for relative in sorted(REQUIRED_RUN_ARTIFACTS):
+        path = run_root.joinpath(*relative.split("/"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}", encoding="utf-8")
+    identities = {
+        cohort: {
+            "dataset_name": "churn",
+            "source_identity": "repository:data.csv",
+            "dataset_digest": character * 64,
+            "row_count": 10,
+            "feature_list": ["CreditScore"],
+            "target_column": "Exited",
+        }
+        for cohort, character in (
+            ("training", "a"),
+            ("validation", "b"),
+            ("evaluation", "c"),
+        )
+    }
+    (run_root / "lineage" / "dataset_identities.json").write_text(
+        json.dumps(identities), encoding="utf-8"
+    )
+    for relative in sorted(REQUIRED_MODEL_FILES):
+        path = tmp_path.joinpath("mlflow-model", *relative.split("/")[1:])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(f"protected:{relative}".encode())
+
+    events = []
+
+    class Client:
+        def __init__(self):
+            self.artifacts = {}
+
+        def log_artifact(self, run_id, path, artifact_path=None):
+            events.append(("artifact", Path(path).name, artifact_path))
+            self.artifacts[f"{artifact_path}/{Path(path).name}"] = Path(path)
+
+        def download_artifacts(self, run_id, path, destination):
+            return str(self.artifacts[path])
+
+        def set_tag(self, run_id, key, value):
+            events.append(("run_tag", key, value))
+
+        def set_model_version_tag(self, name, version, key, value):
+            events.append(("version_tag", key, value))
+
+    mlflow = SimpleNamespace(
+        __version__="3.1.0",
+        artifacts=SimpleNamespace(
+            download_artifacts=lambda **kwargs: str(run_root)
+        ),
+        sklearn=SimpleNamespace(
+            load_model=lambda path: SimpleNamespace(predict=lambda frame: [0])
+        ),
+    )
+    settings = DagsHubSettings(
+        enabled=True,
+        register_model=True,
+        dagshub_repo_owner="owner",
+        dagshub_repo_name="repo",
+    )
+    tracker = ExperimentTracker(settings)
+    digest = tracker._publish_integrity(
+        mlflow=mlflow,
+        client=Client(),
+        model_uri="models:/m-123",
+        model_dir=model_dir,
+        run_id="run-1",
+        version="7",
+        identity="dagshub:owner/repo:churn_predictor:7",
+        checksum=pipeline_checksum(model_dir),
+        training=_training(tmp_path),
+        config=_config(),
+        lineage={
+            "source_commit_sha": "abc123",
+            "source_branch": "release-7",
+            "source_worktree_dirty": "false",
+            "python_version": "3.12.0",
+        },
+    )
+
+    artifact_events = [event for event in events if event[0] == "artifact"]
+    assert [event[1] for event in artifact_events] == [
+        "artifact_manifest.json",
+        "publication_complete.json",
+    ]
+    assert events.index(artifact_events[-1]) < events.index(
+        ("version_tag", "integrity_status", "complete")
+    )
+    assert len(digest) == 64

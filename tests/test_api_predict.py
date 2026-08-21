@@ -137,3 +137,21 @@ def test_health_reports_artifact_readiness_and_metadata(monkeypatch):
     assert body["model_loaded"] is False
     assert body["metadata"] == {"model_name": "test_model"}
     assert "timestamp" in body
+
+
+def test_health_exposes_verified_integrity_identity(monkeypatch):
+    metadata = {
+        "model_name": "churn_predictor",
+        "model_version": "7",
+        "pipeline_sha256": "a" * 64,
+        "artifact_manifest_sha256": "b" * 64,
+        "integrity_status": "complete",
+    }
+    monkeypatch.setattr(model_service, "artifacts_ready", lambda: True)
+    monkeypatch.setattr(model_service, "load_metadata", lambda: metadata)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["artifact_manifest_sha256"] == "b" * 64
+    assert response.json()["integrity_status"] == "complete"

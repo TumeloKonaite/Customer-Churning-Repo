@@ -62,6 +62,25 @@ def prediction_metadata() -> dict[str, str]:
     return result
 
 
+def operational_metadata() -> dict[str, str]:
+    """Return only non-sensitive, verified identifiers suitable for logs."""
+    metadata = load_metadata()
+    fields = (
+        "deployment_id",
+        "model_version",
+        "mlflow_run_id",
+        "model_version_id",
+        "pipeline_sha256",
+        "artifact_manifest_sha256",
+        "integrity_status",
+    )
+    return {
+        field: str(metadata[field])
+        for field in fields
+        if metadata.get(field) is not None
+    }
+
+
 def artifacts_ready() -> bool:
     if deployment_artifacts_ready():
         return True

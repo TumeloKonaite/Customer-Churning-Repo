@@ -27,6 +27,7 @@ jobs:
       EXPECTED_MLFLOW_RUN_ID: ${{ secrets.EXPECTED_MLFLOW_RUN_ID }}
       EXPECTED_MODEL_VERSION_ID: ${{ secrets.EXPECTED_MODEL_VERSION_ID }}
       EXPECTED_PIPELINE_SHA256: ${{ secrets.EXPECTED_PIPELINE_SHA256 }}
+      EXPECTED_ARTIFACT_MANIFEST_SHA256: ${{ secrets.EXPECTED_ARTIFACT_MANIFEST_SHA256 }}
 
     steps:
       - name: Check out repository
@@ -47,6 +48,7 @@ jobs:
           --output-dir build/model
           --expected-run-id ${EXPECTED_MLFLOW_RUN_ID}
           --expected-pipeline-sha256 ${EXPECTED_PIPELINE_SHA256}
+          --expected-artifact-manifest-sha256 ${EXPECTED_ARTIFACT_MANIFEST_SHA256}
           --expected-model-version-id ${EXPECTED_MODEL_VERSION_ID}
           --output json
 

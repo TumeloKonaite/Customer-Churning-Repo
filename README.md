@@ -59,7 +59,7 @@ python -m src.train train --config configs/training.yaml
 
 `dagshub.init(..., mlflow=True)` selects DagsHub as the only remote backend; all experiment logging still goes through MLflow. A tracking outage produces a warning and leaves the completed local artifacts intact. There is no separate local or generic MLflow tracking mode.
 
-Production registration is deliberately stricter. Add `ENABLE_MODEL_REGISTRATION=true` to the DagsHub command. Registration or verification failure then exits non-zero, and a successful run prints the exact numeric `churn_predictor` version, source run ID, application identity, and checksum. Open the repository’s MLflow tab in DagsHub to inspect experiments, runs, metrics, artifacts, and registered versions.
+Production registration is deliberately stricter. Add `ENABLE_MODEL_REGISTRATION=true` to the DagsHub command. Registration or verification failure then exits non-zero, and a successful run prints the exact numeric `churn_predictor` version, source run ID, application identity, pipeline checksum, and artifact-manifest checksum. Open the repository’s MLflow tab in DagsHub to inspect experiments, runs, metrics, artifacts, and registered versions.
 
 `RowNumber`, `CustomerId`, `Surname`, email/phone/address aliases, and case variants are rejected before references are written. Mutable local files are useful development outputs, but they are not production identities and Modal never deploys them directly.
 
@@ -75,13 +75,41 @@ python -m src.mlops validate-model \
   --output json
 ```
 
-The validator resolves the source run, checks parameters, metrics, tags, signature, input example, contracts, reference purposes/privacy, checksum, model loading, and a smoke prediction. It rejects `latest`, aliases such as `@champion`, and stages such as `/Production`.
+The validator resolves the source run, checks parameters, metrics, tags, signature, input example, contracts, reference purposes/privacy, checksums, model loading, and a smoke prediction. It rejects `latest`, aliases such as `@champion`, and stages such as `/Production`. Integrity-enabled versions additionally require `integrity_status=complete`, a valid manifest and completion marker, exact run/version/application linkage, and a byte-for-byte match for every protected artifact. A missing, extra, resized, replaced, or corrupted protected artifact returns a non-zero exit status before the serialized pipeline is loaded.
 
 The immutable application identity is:
 
 ```text
 dagshub:<owner>/<repository>:churn_predictor:<numeric-version>
 ```
+
+Four related values have different purposes:
+
+| Value | Purpose |
+| --- | --- |
+| Numeric registered-model version | Authoritative DagsHub model-registry version used in `models:/churn_predictor/<version>` |
+| `model_version_id` | Repository-qualified application identity for that numeric version |
+| `pipeline_sha256` | Digest of the serialized fitted inference pipeline |
+| `artifact_manifest_sha256` | Digest of the canonical inventory covering the complete protected publication |
+
+The last two checksums supplement the numeric version; neither creates a second registry or a content-addressed model identity.
+
+### Integrity manifest and publication ordering
+
+New production publications add these run artifacts:
+
+```text
+integrity/artifact_manifest.json
+integrity/publication_complete.json
+```
+
+The manifest schema is versioned at `configs/contracts/artifact_manifest.schema.json`. Protected files include the complete logged MLflow model directory (MLmodel, fitted pipeline, environment/dependency files, and input examples), contracts, training configuration, aggregate evaluation/model-comparison results, dataset identities, and the approved drift/evaluation reference metadata and datasets. Transient files, caches, logs, `.env` files, credentials, connection strings, raw identifiers, unrestricted source datasets, and absolute local paths are rejected.
+
+Canonicalization version `sorted-compact-json-v1` uses UTF-8, sorted object keys, no insignificant whitespace, stable path ordering, repository-independent POSIX paths, explicit JSON nulls only where the schema permits them, and rejects NaN or infinity. The checksum is `sha256(canonical_json(artifact_manifest))`; the manifest never contains its own checksum.
+
+Publication first marks the registered version incomplete, logs all approved artifacts and the fitted MLflow model, resolves the exact numeric version, inventories and verifies the protected files, logs and tags the manifest checksum, and runs a verified smoke prediction. `publication_complete.json` is the final artifact write. Only then are the run and model-version integrity tags changed to `complete`. A failure leaves the version incomplete, publishes no completion marker when the failure precedes completion, exits non-zero when registration is required, and never falls back to another version.
+
+Versions created before this format are returned by `validate-model` with `"integrity_status": "legacy"`; they are not presented as integrity-verified and cannot be packaged by the current production deployment command. Historical metadata is not retrofitted or mutated.
 
 Prepare the inference-only Modal directory before deployment:
 
@@ -92,6 +120,7 @@ python -m src.mlops prepare-deployment \
   --expected-run-id "$EXPECTED_MLFLOW_RUN_ID" \
   --expected-model-version-id "$EXPECTED_MODEL_VERSION_ID" \
   --expected-pipeline-sha256 "$EXPECTED_PIPELINE_SHA256" \
+  --expected-artifact-manifest-sha256 "$EXPECTED_ARTIFACT_MANIFEST_SHA256" \
   --output json
 ```
 
@@ -141,6 +170,7 @@ MLFLOW_MODEL_VERSION=7
 EXPECTED_MLFLOW_RUN_ID=<run-id>
 EXPECTED_MODEL_VERSION_ID=dagshub:<owner>/<repository>:churn_predictor:7
 EXPECTED_PIPELINE_SHA256=<digest>
+EXPECTED_ARTIFACT_MANIFEST_SHA256=<digest>
 ```
 
 Do not add DagsHub credentials to this Modal secret. They are used locally or in the protected GitHub deployment environment only to prepare `build/model` before `modal deploy`.
@@ -149,7 +179,7 @@ Do not add DagsHub credentials to this Modal secret. They are used locally or in
 modal deploy modal_app.py
 ```
 
-At container startup, Modal verifies the package, expected model/run/application identity, checksum, feature-schema version, deserialization, smoke prediction, typed production database configuration, and database connectivity before returning the FastAPI application. Individual requests load the local package and make no DagsHub call.
+At container startup, Modal verifies the package, expected model/run/application identity, pipeline checksum, artifact-manifest checksum, complete integrity status, feature-schema version, deserialization, smoke prediction, typed production database configuration, and database connectivity before returning the FastAPI application. Individual requests load the local package and make no DagsHub call.
 
 The GitHub deployment workflow requires protected production secrets for Modal authentication, DagsHub download, and every expected model identity value. Configure the same runtime identity and Neon values in the Modal secret.
 
@@ -169,22 +199,24 @@ Endpoints:
 - `POST /api/batch_predict_csv`
 - `/docs`, `/redoc`, and `/openapi.json`
 
-Verified health metadata exposes `deployment_id`, model name, exact numeric version, `model_version_id`, source MLflow run, and feature-schema version. Single responses and batch metadata expose `deployment_id` and `model_version_id`. No fallback version is fabricated when verified metadata is unavailable.
+Verified health metadata exposes `deployment_id`, model name, exact numeric version, `model_version_id`, source MLflow run, feature-schema version, `pipeline_sha256`, `artifact_manifest_sha256`, and `integrity_status`. Safe startup and prediction logs contain these deployment/integrity identifiers but never feature values or customer identifiers. Single responses and batch metadata retain their existing identity fields. No fallback version is fabricated when verified metadata is unavailable.
 
 ## Rollback
 
 Rollback is a new deployment, not an alias change or runtime hot swap:
 
 1. Choose a historical numeric `churn_predictor` version in DagsHub.
-2. Run `validate-model` for that exact URI.
-3. Update all expected identity/checksum values.
+2. Run `validate-model` for that exact URI and confirm it is integrity-complete (legacy versions are not deployment-eligible).
+3. Update all expected identity/checksum values, including `EXPECTED_ARTIFACT_MANIFEST_SHA256`.
 4. Prepare a fresh `build/model`; this generates a new `deployment_id`.
 5. Update the Modal secret identity and redeploy.
 6. Confirm `/health` reports the intended numeric model version and new deployment ID.
 
 ## Security and data publication
 
-Allowed DagsHub artifacts are approved raw model features, labelled evaluation reference rows, deterministic dataset identities, aggregate evaluation results, versioned contracts, and the fitted pipeline. Never upload `.env` files, credentials, connection strings, raw identifiers, unrestricted source datasets, or production prediction payloads. Logs must contain identity and durations—not raw features, reference rows, authentication headers, or URLs with credentials.
+Allowed DagsHub artifacts are approved raw model features, labelled evaluation reference rows, deterministic dataset identities, aggregate evaluation results, versioned contracts, and the fitted pipeline. DagsHub MLflow remains the only tracking backend, artifact source, and model registry; no local historical model store, hash hierarchy, latest pointer, or alternate publication CLI exists. Never upload `.env` files, credentials, connection strings, raw identifiers, unrestricted source datasets, or production prediction payloads. Logs must contain identity, checksums, integrity status, and durations—not raw features, reference rows, authentication headers, database URLs, DagsHub tokens, or URLs with credentials.
+
+The fitted sklearn pipeline is a trusted executable artifact. Validation accepts it only from the configured DagsHub repository and verifies the complete inventory and pipeline checksum before deserialization. DagsHub publishing credentials stay in the local/protected deployment environment, while the Neon URL exists only in the Modal runtime secret. The inference package copies only the MLflow model, feature contract, and safe deployment metadata; training metrics and reference rows remain outside the Modal image.
 
 ## Tests
 

@@ -20,6 +20,9 @@ def get_health_status() -> dict:
         "model_version_id",
         "mlflow_run_id",
         "feature_schema_version",
+        "pipeline_sha256",
+        "artifact_manifest_sha256",
+        "integrity_status",
     ):
         if metadata.get(field) is not None:
             response[field] = metadata[field]
