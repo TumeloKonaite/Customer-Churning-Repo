@@ -39,3 +39,9 @@ __all__ = [
     "validate_outcome_environment",
     "validate_prediction_eligibility",
 ]
+"""Offline data-quality and drift monitoring package."""
+
+from src.monitoring.job import MonitoringJob
+from src.monitoring.models import BaselineVersion, MonitoringPolicy, RunStatus
+
+__all__ = ["BaselineVersion", "MonitoringJob", "MonitoringPolicy", "RunStatus"]

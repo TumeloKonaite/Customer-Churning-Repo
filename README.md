@@ -1,6 +1,6 @@
 # Customer Churn Prediction
 
-This service trains one fitted scikit-learn pipeline locally, records eligible runs and models in DagsHub MLflow, packages one exact registered version for Modal inference, and uses Neon PostgreSQL as the operational database foundation. Evidently monitoring and prediction persistence are intentionally deferred.
+This service trains one fitted scikit-learn pipeline locally, records eligible runs and models in DagsHub MLflow, packages one exact registered version for Modal inference, and uses Neon PostgreSQL for operational state. Scheduled Modal workers run reproducible Evidently data-quality and drift reports outside prediction requests.
 
 ## Responsibility boundaries
 
@@ -8,9 +8,9 @@ This service trains one fitted scikit-learn pipeline locally, records eligible r
 | --- | --- |
 | Local environment | Training, evaluation, privacy-safe references, publication, validation, packaging |
 | DagsHub MLflow | Runs, metrics, lineage, contracts, references, model artifacts, numeric registry versions |
-| Neon PostgreSQL | Future deployment, prediction, outcome, label, and monitoring-run state |
-| Modal | Single and batch inference from a prepackaged model only |
-| Evidently | Future data quality, drift, and delayed-performance calculations |
+| Neon PostgreSQL | Prediction-event cursors plus immutable monitoring policy, baseline, and run associations |
+| Modal | Inference plus separate scheduled/manual monitoring workers |
+| Evidently | Offline data quality and drift reports only; never imported by the prediction path |
 
 Modal never trains, refits, registers, selects `latest`, or contacts DagsHub during a prediction. There is no self-hosted MLflow server, separate MLflow database/bucket, or custom content-addressed registry.
 
@@ -151,7 +151,39 @@ python -m src.database check --output json
 python -m alembic upgrade head
 ```
 
-Alembic is the only supported production schema-management mechanism. The baseline establishes migration ownership but creates none of the future operational tables. Under `APP_ENV=test`, Alembic rejects remote targets to prevent tests from reaching production.
+Alembic is the only supported production schema-management mechanism. Revision `20260822_0002` adds prediction events and monitoring policy, baseline, and run tables. Under `APP_ENV=test`, Alembic rejects remote targets to prevent tests from reaching production.
+
+## Scheduled data-quality and drift monitoring
+
+Monitoring uses an enabled immutable policy, an immutable baseline for one exact model version, and a cadence-aligned extraction cutoff. The database watermark combines `persisted_at` with the maximum persisted `event_id`, so late arrivals are excluded and a retry selects the same cohort. A rolling window doubles up to the policy maximum/fixed boundary; excess rows are limited deterministically by `prediction_timestamp DESC, event_id DESC`. Model versions are never combined.
+
+Apply migrations and register policy v1 idempotently:
+
+```bash
+python -m alembic upgrade head
+python -m src.monitoring register-policy --file configs/monitoring/policy-v1.0.0.json
+```
+
+Create a baseline JSON record containing the exact model version, immutable `s3://` reference URI and SHA-256, schema version, creation/activation times, purpose, and approval metadata, then register it:
+
+```bash
+python -m src.monitoring register-baseline --file baseline-v1.json
+```
+
+The reference must be Parquet or CSV, contain at least the configured minimum rows, match the policy feature schema, and include `prediction_probability` and `predicted_class`. Its bytes are checksum-verified before Evidently runs. The producer for `prediction_events` must write only approved canonical features plus prediction output/identity metadata; the monitoring worker does not collect data from prediction HTTP handlers.
+
+Manual local/operations execution is:
+
+```bash
+python -m src.monitoring run \
+  --environment production \
+  --model-version-id dagshub:owner/repository:churn_predictor:7 \
+  --as-of 2026-08-22T12:15:00Z
+```
+
+Modal deploys `scheduled_monitoring` at `15 */6 * * *` UTC and exposes `run_monitoring` for manual debugging. Both have three bounded retries; neither is called by FastAPI. Successful runs publish `report.html`, strict `report.json`, normalized `summary.json`, and `checksums.json` beneath the immutable model/baseline/run prefix. Insufficient-volume runs publish only a non-green summary and checksums and persist `insufficient_data`, not `completed`.
+
+Policy v1 values—including row counts, ranges, methods, and thresholds—are explicitly initial hypotheses. Calibrate them from observed production volume and distributions. Any result-affecting change requires a new policy version; a changed reference requires a new baseline version. See [data-quality-drift-jobs-v1.md](docs/monitoring/data-quality-drift-jobs-v1.md) for the complete run/reproduction contract.
 
 Rotate the runtime credential by creating/rotating the Neon role password, updating local/GitHub/Modal secret stores, redeploying, running the connectivity check, and then revoking the old credential. Never print the full URL.
 
@@ -171,6 +203,10 @@ EXPECTED_MLFLOW_RUN_ID=<run-id>
 EXPECTED_MODEL_VERSION_ID=dagshub:<owner>/<repository>:churn_predictor:7
 EXPECTED_PIPELINE_SHA256=<digest>
 EXPECTED_ARTIFACT_MANIFEST_SHA256=<digest>
+MONITORING_ARTIFACT_BUCKET=<bucket>
+MONITORING_ARTIFACT_REGION=<region>
+# MONITORING_ARTIFACT_ENDPOINT_URL=<S3-compatible-endpoint-if-needed>
+# Provider workload credentials, scoped to the monitoring prefix
 ```
 
 Do not add DagsHub credentials to this Modal secret. They are used locally or in the protected GitHub deployment environment only to prepare `build/model` before `modal deploy`.
@@ -216,7 +252,7 @@ Rollback is a new deployment, not an alias change or runtime hot swap:
 
 Allowed DagsHub artifacts are approved raw model features, labelled evaluation reference rows, deterministic dataset identities, aggregate evaluation results, versioned contracts, and the fitted pipeline. DagsHub MLflow remains the only tracking backend, artifact source, and model registry; no local historical model store, hash hierarchy, latest pointer, or alternate publication CLI exists. Never upload `.env` files, credentials, connection strings, raw identifiers, unrestricted source datasets, or production prediction payloads. Logs must contain identity, checksums, integrity status, and durations—not raw features, reference rows, authentication headers, database URLs, DagsHub tokens, or URLs with credentials.
 
-The fitted sklearn pipeline is a trusted executable artifact. Validation accepts it only from the configured DagsHub repository and verifies the complete inventory and pipeline checksum before deserialization. DagsHub publishing credentials stay in the local/protected deployment environment, while the Neon URL exists only in the Modal runtime secret. The inference package copies only the MLflow model, feature contract, and safe deployment metadata; training metrics and reference rows remain outside the Modal image.
+The fitted sklearn pipeline is a trusted executable artifact. Validation accepts it only from the configured DagsHub repository and verifies the complete inventory and pipeline checksum before deserialization. DagsHub publishing credentials stay in the local/protected deployment environment, while the Neon URL and monitoring bucket configuration exist only in the Modal runtime secret. The inference package copies only the MLflow model, feature contract, and safe deployment metadata; training metrics and reference rows remain outside the Modal image.
 
 ## Tests
 
@@ -224,4 +260,4 @@ The fitted sklearn pipeline is a trusted executable artifact. Validation accepts
 pytest -q
 ```
 
-Unit tests do not access DagsHub or Neon. External integration tests are opt-in and skip unless their dedicated credentials are supplied. The production monitoring rules remain documented in [docs/monitoring/production-monitoring-contract-v1.md](docs/monitoring/production-monitoring-contract-v1.md); Evidently execution and scheduling are outside this foundation.
+Unit tests do not access DagsHub, Neon, or the artifact bucket. External integration tests are opt-in and skip unless their dedicated credentials are supplied. Outcome/label rules remain documented in [production-monitoring-contract-v1.md](docs/monitoring/production-monitoring-contract-v1.md); offline data-quality/drift execution is documented separately.

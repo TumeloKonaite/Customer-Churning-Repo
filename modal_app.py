@@ -75,3 +75,61 @@ def fastapi_app():
     from application import app as fastapi_application
 
     return fastapi_application
+
+
+def _execute_monitoring(scheduled_for: str | None = None):
+    """Build monitoring-only dependencies inside a non-request Modal container."""
+    from datetime import datetime
+
+    from src.config import DatabaseSettings, MonitoringSettings
+    from src.database import create_database_engine
+    from src.monitoring.__main__ import _store
+    from src.monitoring.job import MonitoringJob
+    from src.monitoring.repository import MonitoringRepository
+
+    settings = MonitoringSettings()
+    engine = create_database_engine(DatabaseSettings())
+    try:
+        as_of = (
+            datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
+            if scheduled_for
+            else None
+        )
+        return MonitoringJob(MonitoringRepository(engine), _store(settings)).run(
+            environment=settings.environment.value,
+            model_version_id=settings.model_version_id,
+            scheduled_for=as_of,
+        )
+    finally:
+        engine.dispose()
+
+
+monitoring_retries = modal.Retries(
+    max_retries=3,
+    backoff_coefficient=2.0,
+    initial_delay=5.0,
+    max_delay=60.0,
+)
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    schedule=modal.Cron("15 */6 * * *", timezone="UTC"),
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def scheduled_monitoring():
+    """Run on the policy-v1 cadence, outside all FastAPI request handling."""
+    return _execute_monitoring()
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def run_monitoring(scheduled_for: str | None = None):
+    """Manual operations/debug entrypoint; scheduled_for is an optional ISO-8601 time."""
+    return _execute_monitoring(scheduled_for)
