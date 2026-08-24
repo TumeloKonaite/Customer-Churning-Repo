@@ -1,0 +1,2 @@
+CreditScore,Geography,Gender,Age,Tenure,Balance,NumOfProducts,HasCrCard,IsActiveMember,EstimatedSalary
+650,France,Female,38,5,75000,2,1,1,60000
