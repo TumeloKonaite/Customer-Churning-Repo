@@ -6,7 +6,7 @@ from fastapi import FastAPI
 
 from src.api.errors import register_exception_handlers
 from src.api.openapi import build_openapi_schema
-from src.api.routes import health, predictions, web
+from src.api.routes import health, outcomes, predictions, web
 from src.schemas.batch_prediction import MAX_BATCH_SIZE
 
 
@@ -22,11 +22,13 @@ def create_app() -> FastAPI:
         openapi_tags=[
             {"name": "Health", "description": "Service and model readiness."},
             {"name": "Predictions", "description": "Single and batch churn inference."},
+            {"name": "Monitoring outcomes", "description": "Protected outcome ingestion."},
         ],
     )
     register_exception_handlers(app)
     app.include_router(health.router)
     app.include_router(predictions.router)
+    app.include_router(outcomes.router)
     app.include_router(web.router)
     app.openapi = partial(build_openapi_schema, app)
     return app

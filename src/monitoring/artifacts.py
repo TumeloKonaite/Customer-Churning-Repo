@@ -29,6 +29,15 @@ def artifact_prefix(model_version_id: str, baseline_version_id: str, run_id: str
     return f"monitoring/{segments[0]}/{segments[1]}/drift/{segments[2]}"
 
 
+def performance_artifact_prefix(model_version_id: str, monitoring_run_id: str) -> str:
+    segments: list[str] = []
+    for value in (model_version_id, monitoring_run_id):
+        if not value or value in {".", ".."}:
+            raise ValueError("artifact path identities must be non-empty")
+        segments.append(quote(value, safe="-._~:"))
+    return f"monitoring/{segments[0]}/performance/{segments[1]}"
+
+
 @dataclass(slots=True)
 class S3ArtifactStore:
     bucket: str
