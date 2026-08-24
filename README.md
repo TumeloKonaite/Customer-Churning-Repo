@@ -24,6 +24,43 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
+## Churn Insight React frontend
+
+The browser application lives in [`frontend/`](frontend/). It provides the live service overview, single-customer assessment, CSV batch assessment (up to 100 records), partial and fail-fast processing, row-level errors, and CSV result export. The FastAPI service remains the only backend.
+
+Prerequisites are Node.js 20+ and npm 10+. Start it locally with:
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+`VITE_API_BASE_URL` selects the API origin and defaults to `http://localhost:5001` when absent. The checked-in example points to the deployed Modal API. Every `VITE_*` value is public at build time: never place credentials, `OUTCOME_INGESTION_API_KEY`, or other secrets there. Customer form values are not persisted in browser storage or sent to analytics.
+
+Run the frontend checks and create the production assets with:
+
+```bash
+cd frontend
+npm test
+npm run build
+npm run preview
+```
+
+Deploy `frontend/dist` on a static Vite-compatible host. Set the host’s base directory to `frontend`, build command to `npm run build`, output directory to `dist`, and configure `VITE_API_BASE_URL` before building. Vercel, Netlify, and Cloudflare Pages SPA fallbacks are included in `frontend/vercel.json`, `frontend/netlify.toml`, and `frontend/public/_redirects`; unknown routes must serve `index.html` so `/predict` and `/batch` work after a direct refresh. See [`frontend/README.md`](frontend/README.md) for the deployment checklist.
+
+### Frontend CORS configuration
+
+The API reads a comma-separated exact-origin allowlist from `FRONTEND_ALLOWED_ORIGINS`. Development and test add `http://localhost:5173` and `http://127.0.0.1:5173`; production does not add local origins and rejects `*`.
+
+```text
+APP_ENV=production
+FRONTEND_ALLOWED_ORIGINS=https://churn.example.com,https://operations.example.com
+```
+
+Only `GET` and `POST` methods and the `Accept` and `Content-Type` request headers are permitted cross-origin. Add the final frontend origin to the Modal environment and redeploy the backend before production smoke testing. Do not bypass a missing origin with browser `no-cors` mode.
+
 `pyproject.toml` is the dependency source of truth. Regenerate pinned files with:
 
 ```bash
