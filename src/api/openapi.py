@@ -10,6 +10,8 @@ from src.schemas.batch_prediction import (
 )
 from src.schemas.errors import BatchContractError
 from src.schemas.prediction import SinglePredictionRequest
+from src.api.routes.outcomes import OutcomeBatchEnvelope, SourceWatermarkRequest
+from src.monitoring.outcomes import OutcomeIngestionRequest, OutcomeReference
 
 
 def build_openapi_schema(app: FastAPI):
@@ -31,10 +33,16 @@ def build_openapi_schema(app: FastAPI):
         BatchOptions,
         BatchPredictionRequest,
         BatchContractError,
+        OutcomeReference,
+        OutcomeIngestionRequest,
+        OutcomeBatchEnvelope,
+        SourceWatermarkRequest,
     ):
-        schemas[model.__name__] = model.model_json_schema(
+        model_schema = model.model_json_schema(
             ref_template="#/components/schemas/{model}"
         )
+        schemas.update(model_schema.pop("$defs", {}))
+        schemas[model.__name__] = model_schema
 
     csv_body_schema = schema["paths"]["/api/batch_predict_csv"]["post"]["requestBody"][
         "content"

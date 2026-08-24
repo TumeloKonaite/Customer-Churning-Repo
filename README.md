@@ -151,7 +151,7 @@ python -m src.database check --output json
 python -m alembic upgrade head
 ```
 
-Alembic is the only supported production schema-management mechanism. Revision `20260822_0002` adds prediction events and monitoring policy, baseline, and run tables. Under `APP_ENV=test`, Alembic rejects remote targets to prevent tests from reaching production.
+Alembic is the only supported production schema-management mechanism. Revision `20260822_0002` adds prediction events and monitoring policy, baseline, and run tables. Revision `20260824_0003` adds idempotent outcomes, append-only source watermarks and label revisions, and performance-run metadata. Under `APP_ENV=test`, Alembic rejects remote targets to prevent tests from reaching production.
 
 ## Scheduled data-quality and drift monitoring
 
@@ -185,6 +185,12 @@ Modal deploys `scheduled_monitoring` at `15 */6 * * *` UTC and exposes `run_moni
 
 Policy v1 values—including row counts, ranges, methods, and thresholds—are explicitly initial hypotheses. Calibrate them from observed production volume and distributions. Any result-affecting change requires a new policy version; a changed reference requires a new baseline version. See [data-quality-drift-jobs-v1.md](docs/monitoring/data-quality-drift-jobs-v1.md) for the complete run/reproduction contract.
 
+## Outcome labels and matured-cohort performance
+
+The protected `/api/monitoring/outcomes` endpoint ingests real or simulated events with per-record batch results, HMAC tokenization, source-identity idempotency, and append-only corrections. Source owners declare completeness through `/api/monitoring/outcomes/watermarks`. Raw customer identifiers and rejected payloads are never persisted or logged.
+
+Modal runs daily label materialization at `02:45 UTC` and weekly performance reporting at `03:30 UTC` on Monday. Negatives require horizon maturity, grace, and all required watermarks. Performance artifacts use the immutable `monitoring/{model_version_id}/performance/{monitoring_run_id}/` layout. See [outcomes-labels-performance-v1.md](docs/monitoring/outcomes-labels-performance-v1.md) for ingestion, correction, reproducibility, metric-availability, simulation, and privacy-suppression behavior.
+
 Rotate the runtime credential by creating/rotating the Neon role password, updating local/GitHub/Modal secret stores, redeploying, running the connectivity check, and then revoking the old credential. Never print the full URL.
 
 ## Modal deployment
@@ -205,6 +211,20 @@ EXPECTED_PIPELINE_SHA256=<digest>
 EXPECTED_ARTIFACT_MANIFEST_SHA256=<digest>
 MONITORING_ARTIFACT_BUCKET=<bucket>
 MONITORING_ARTIFACT_REGION=<region>
+CUSTOMER_TOKEN_HMAC_SECRET=<at-least-32-random-bytes>
+CUSTOMER_TOKEN_KEY_ID=<key-version>
+OUTCOME_INGESTION_API_KEY=<at-least-24-random-characters>
+OUTCOME_ALLOWED_REAL_SOURCES=customer-master
+REQUIRED_OUTCOME_SOURCES=customer-master
+MONITORING_DEPLOYMENT_IDS=<deployment-id>
+LABEL_CONTRACT_VERSION=1.0.0
+LABEL_CONTRACT_APPROVED=<true-only-after-recorded-approval>
+MONITORING_POLICY_VERSION=1.0.0
+PREDICTION_HORIZON_DAYS=90
+LABEL_GRACE_PERIOD_DAYS=7
+PERFORMANCE_COHORT_DAYS=30
+DEPLOYED_CLASSIFICATION_THRESHOLD=0.5
+MONITORING_MINIMUM_PRIVACY_SIZE=20
 # MONITORING_ARTIFACT_ENDPOINT_URL=<S3-compatible-endpoint-if-needed>
 # Provider workload credentials, scoped to the monitoring prefix
 ```
@@ -233,6 +253,8 @@ Endpoints:
 - `POST /api/predict`
 - `POST /api/predict/batch` (and compatibility alias `/api/batch_predict`)
 - `POST /api/batch_predict_csv`
+- `POST /api/monitoring/outcomes` (protected; single or partial-success batch)
+- `POST /api/monitoring/outcomes/watermarks` (protected)
 - `/docs`, `/redoc`, and `/openapi.json`
 
 Verified health metadata exposes `deployment_id`, model name, exact numeric version, `model_version_id`, source MLflow run, feature-schema version, `pipeline_sha256`, `artifact_manifest_sha256`, and `integrity_status`. Safe startup and prediction logs contain these deployment/integrity identifiers but never feature values or customer identifiers. Single responses and batch metadata retain their existing identity fields. No fallback version is fabricated when verified metadata is unavailable.

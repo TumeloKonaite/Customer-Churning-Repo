@@ -1,0 +1,28 @@
+{
+  "policy_version": "outcome-performance-1.0.0",
+  "label_contract_version": "1.0.0",
+  "cohort_selection_rule": "prediction_timestamp",
+  "prediction_horizon_days": 90,
+  "label_grace_period_days": 7,
+  "required_real_outcome_sources": ["customer-master"],
+  "classification_threshold": 0.5,
+  "performance_cohort_days": 30,
+  "calibration": {
+    "binning_strategy": "uniform",
+    "bin_count": 10,
+    "minimum_bin_volume": 20,
+    "expected_calibration_error_enabled": true,
+    "minimum_regression_rows": 50
+  },
+  "segments": {
+    "approved_definitions": {},
+    "minimum_privacy_size": 20,
+    "complementary_suppression": true
+  },
+  "simulation": {
+    "allowed_environments": ["development", "test", "staging"],
+    "production_allowed": false,
+    "separate_from_real": true
+  },
+  "automatic_threshold_changes": false
+}

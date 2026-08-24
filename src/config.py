@@ -14,6 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
+    STAGING = "staging"
     PRODUCTION = "production"
 
 
@@ -166,6 +167,95 @@ class MonitoringSettings(_Settings):
             )
         if self.environment is Environment.PRODUCTION and not self.artifact_bucket:
             raise ValueError("production monitoring requires MONITORING_ARTIFACT_BUCKET")
+        return self
+
+
+class OutcomeIngestionSettings(_Settings):
+    """Secrets and allow-lists for the protected outcome ingestion boundary."""
+
+    environment: Environment = Field(default=Environment.DEVELOPMENT, alias="APP_ENV")
+    token_secret: SecretStr = Field(alias="CUSTOMER_TOKEN_HMAC_SECRET")
+    token_key_id: str = Field(min_length=1, alias="CUSTOMER_TOKEN_KEY_ID")
+    ingestion_api_key: SecretStr = Field(alias="OUTCOME_INGESTION_API_KEY")
+    allowed_real_source_namespaces: str = Field(
+        default="customer-master", alias="OUTCOME_ALLOWED_REAL_SOURCES"
+    )
+
+    @model_validator(mode="after")
+    def strong_secrets(self) -> "OutcomeIngestionSettings":
+        if len(self.token_secret.get_secret_value().encode("utf-8")) < 32:
+            raise ValueError("CUSTOMER_TOKEN_HMAC_SECRET must contain at least 32 bytes")
+        if len(self.ingestion_api_key.get_secret_value()) < 24:
+            raise ValueError("OUTCOME_INGESTION_API_KEY must contain at least 24 characters")
+        if not self.allowed_sources:
+            raise ValueError("OUTCOME_ALLOWED_REAL_SOURCES must not be empty")
+        return self
+
+    @property
+    def allowed_sources(self) -> frozenset[str]:
+        return frozenset(
+            value.strip()
+            for value in self.allowed_real_source_namespaces.split(",")
+            if value.strip()
+        )
+
+
+class OutcomeMonitoringSettings(_Settings):
+    """Versioned label-materialization and performance scheduling inputs."""
+
+    environment: Environment = Field(default=Environment.DEVELOPMENT, alias="APP_ENV")
+    model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
+    deployment_ids_csv: str = Field(alias="MONITORING_DEPLOYMENT_IDS")
+    required_outcome_sources_csv: str = Field(
+        default="customer-master", alias="REQUIRED_OUTCOME_SOURCES"
+    )
+    label_contract_version: str = Field(default="1.0.0", alias="LABEL_CONTRACT_VERSION")
+    label_contract_approved: bool = Field(
+        default=False, alias="LABEL_CONTRACT_APPROVED"
+    )
+    policy_version: str = Field(default="1.0.0", alias="MONITORING_POLICY_VERSION")
+    horizon_days: int = Field(default=90, ge=1, alias="PREDICTION_HORIZON_DAYS")
+    grace_period_days: int = Field(default=7, ge=0, alias="LABEL_GRACE_PERIOD_DAYS")
+    performance_cohort_days: int = Field(
+        default=30, ge=1, alias="PERFORMANCE_COHORT_DAYS"
+    )
+    classification_threshold: float = Field(
+        default=0.5, ge=0, le=1, alias="DEPLOYED_CLASSIFICATION_THRESHOLD"
+    )
+    minimum_privacy_size: int = Field(
+        default=20, ge=2, alias="MONITORING_MINIMUM_PRIVACY_SIZE"
+    )
+
+    @property
+    def required_sources(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                value.strip()
+                for value in self.required_outcome_sources_csv.split(",")
+                if value.strip()
+            )
+        )
+
+    @property
+    def deployment_ids(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                value.strip()
+                for value in self.deployment_ids_csv.split(",")
+                if value.strip()
+            )
+        )
+
+    @model_validator(mode="after")
+    def complete_identity(self) -> "OutcomeMonitoringSettings":
+        if not self.required_sources:
+            raise ValueError("REQUIRED_OUTCOME_SOURCES must not be empty")
+        if not self.deployment_ids:
+            raise ValueError("MONITORING_DEPLOYMENT_IDS must not be empty")
+        if self.environment is Environment.PRODUCTION and self.minimum_privacy_size < 20:
+            raise ValueError("production minimum privacy size must be at least 20")
+        if self.environment is Environment.PRODUCTION and not self.label_contract_approved:
+            raise ValueError("production label monitoring requires an approved contract")
         return self
 
 

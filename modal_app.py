@@ -133,3 +133,138 @@ def scheduled_monitoring():
 def run_monitoring(scheduled_for: str | None = None):
     """Manual operations/debug entrypoint; scheduled_for is an optional ISO-8601 time."""
     return _execute_monitoring(scheduled_for)
+
+
+def _execute_label_materialization(as_of: str | None = None):
+    """Build label-only dependencies inside the scheduled worker."""
+    from datetime import datetime, timedelta, timezone
+
+    from src.config import DatabaseSettings, OutcomeMonitoringSettings
+    from src.database import create_database_engine
+    from src.monitoring.label_repository import LabelRepository
+    from src.monitoring.labels import LabelMaterializationJob
+
+    settings = OutcomeMonitoringSettings()
+    engine = create_database_engine(DatabaseSettings())
+    try:
+        if as_of:
+            observed_at = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+        else:
+            current = datetime.now(timezone.utc)
+            observed_at = current.replace(hour=2, minute=45, second=0, microsecond=0)
+            if observed_at > current:
+                observed_at -= timedelta(days=1)
+        return LabelMaterializationJob(
+            LabelRepository(engine),
+            required_sources=settings.required_sources,
+            horizon_days=settings.horizon_days,
+            grace_period_days=settings.grace_period_days,
+            label_contract_version=settings.label_contract_version,
+        ).run(
+            environment=settings.environment.value,
+            is_simulated=False,
+            as_of=observed_at,
+        )
+    finally:
+        engine.dispose()
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    schedule=modal.Cron("45 2 * * *", timezone="UTC"),
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def scheduled_label_materialization():
+    """Daily idempotent attribution, corrections, and matured negatives."""
+    return _execute_label_materialization()
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def run_label_materialization(as_of: str | None = None):
+    """Manual label-materialization entrypoint with an optional UTC snapshot."""
+    return _execute_label_materialization(as_of)
+
+
+def _execute_performance(as_of: str | None = None):
+    from datetime import datetime, timedelta, timezone
+
+    from src.config import DatabaseSettings, MonitoringSettings, OutcomeMonitoringSettings
+    from src.database import create_database_engine
+    from src.monitoring.__main__ import _store
+    from src.monitoring.label_repository import LabelRepository
+    from src.monitoring.labels import LabelMaterializationJob
+    from src.monitoring.performance_job import PerformanceJob, PerformanceRepository
+
+    settings = OutcomeMonitoringSettings()
+    artifact_settings = MonitoringSettings()
+    if as_of:
+        evaluated_at = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
+    else:
+        current = datetime.now(timezone.utc)
+        days_since_monday = current.weekday()
+        evaluated_at = (
+            current - timedelta(days=days_since_monday)
+        ).replace(hour=3, minute=30, second=0, microsecond=0)
+        if evaluated_at > current:
+            evaluated_at -= timedelta(days=7)
+    engine = create_database_engine(DatabaseSettings())
+    try:
+        label_summary = LabelMaterializationJob(
+            LabelRepository(engine),
+            required_sources=settings.required_sources,
+            horizon_days=settings.horizon_days,
+            grace_period_days=settings.grace_period_days,
+            label_contract_version=settings.label_contract_version,
+        ).run(environment=settings.environment.value, as_of=evaluated_at)
+        cohort_end = evaluated_at - timedelta(
+            days=settings.horizon_days + settings.grace_period_days
+        )
+        cohort_start = cohort_end - timedelta(days=settings.performance_cohort_days)
+        return PerformanceJob(
+            PerformanceRepository(engine), _store(artifact_settings)
+        ).run(
+            cohort_start=cohort_start,
+            cohort_end=cohort_end,
+            horizon_days=settings.horizon_days,
+            grace_period_days=settings.grace_period_days,
+            outcome_watermark=label_summary["outcome_watermark"],
+            label_contract_version=settings.label_contract_version,
+            model_version_id=settings.model_version_id,
+            deployment_ids=settings.deployment_ids,
+            policy_version=settings.policy_version,
+            classification_threshold=settings.classification_threshold,
+            minimum_privacy_size=settings.minimum_privacy_size,
+            label_revision_watermark=label_summary["label_revision_watermark"],
+            evaluated_at=evaluated_at,
+        )
+    finally:
+        engine.dispose()
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    schedule=modal.Cron("30 3 * * 1", timezone="UTC"),
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def scheduled_performance_monitoring():
+    """Publish a weekly matured-cohort production performance report."""
+    return _execute_performance()
+
+
+@app.function(
+    image=image,
+    secrets=runtime_secrets,
+    retries=monitoring_retries,
+    timeout=1800,
+)
+def run_performance_monitoring(as_of: str | None = None):
+    return _execute_performance(as_of)
