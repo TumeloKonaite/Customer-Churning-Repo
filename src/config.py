@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 import re
 from urllib.parse import parse_qs, urlparse
 
@@ -139,6 +140,32 @@ class DeploymentSettings(_Settings):
             raise ValueError(
                 "EXPECTED_MODEL_VERSION_ID must match the configured model name and version"
             )
+        return self
+
+
+class MonitoringSettings(_Settings):
+    """Artifact-bucket and exact-model settings used only by monitoring workers."""
+
+    environment: Environment = Field(default=Environment.DEVELOPMENT, alias="APP_ENV")
+    model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
+    artifact_bucket: str | None = Field(default=None, alias="MONITORING_ARTIFACT_BUCKET")
+    artifact_endpoint_url: str | None = Field(
+        default=None, alias="MONITORING_ARTIFACT_ENDPOINT_URL"
+    )
+    artifact_region: str | None = Field(default=None, alias="MONITORING_ARTIFACT_REGION")
+    local_artifact_dir: Path | None = Field(
+        default=None, alias="MONITORING_LOCAL_ARTIFACT_DIR"
+    )
+
+    @model_validator(mode="after")
+    def one_artifact_backend(self) -> "MonitoringSettings":
+        if bool(self.artifact_bucket) == bool(self.local_artifact_dir):
+            raise ValueError(
+                "configure exactly one of MONITORING_ARTIFACT_BUCKET or "
+                "MONITORING_LOCAL_ARTIFACT_DIR"
+            )
+        if self.environment is Environment.PRODUCTION and not self.artifact_bucket:
+            raise ValueError("production monitoring requires MONITORING_ARTIFACT_BUCKET")
         return self
 
 
