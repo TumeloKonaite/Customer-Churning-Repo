@@ -52,3 +52,11 @@ FRONTEND_ALLOWED_ORIGINS=https://your-production-frontend.example.com
 ```
 
 For multiple approved sites, separate exact origins with commas. Wildcards are rejected. After both deployments, open every route directly, confirm the live health metadata, and perform one non-sensitive single and CSV sample prediction.
+
+## Production deployment
+
+- Production URL: https://customer-churning-repo.vercel.app
+- API origin: https://tumelokonaitedev--customer-churn-backend-fastapi-app.modal.run
+- Successful production smoke test: 2026-08-24
+
+The production smoke test confirmed direct navigation and refresh for `/`, `/predict`, and `/batch`; healthy model metadata; exact-origin CORS; one single-customer prediction; upload and processing of `public/sample-customers.csv`; CSV result download; and no browser console, mixed-content, CORS, or failed API-request errors.
