@@ -8,8 +8,9 @@ import pandas as pd
 
 from src.pipeline.prediction_pipeline import PredictPipeline
 from src.schemas.prediction import SinglePredictionRequest
-from src.services import model_service
+from src.services import model_service, prediction_event_service
 from src.services.exceptions import APIServiceError, PredictionExecutionError
+from src.services.prediction_event_service import PredictionPersistenceError
 from src.services.prediction_validation import validate_record
 
 
@@ -38,8 +39,16 @@ def predict_single(payload: Any) -> dict[str, Any]:
     model_service.ensure_artifacts_ready()
     try:
         label, probability = _predict_one(request)
+        prediction_timestamp = datetime.now(timezone.utc)
         metadata = model_service.prediction_metadata()
         operational = model_service.operational_metadata()
+        prediction_event_service.persist_prediction_events(
+            feature_rows=[request.model_dump(mode="json")],
+            labels=[label],
+            probabilities=[probability],
+            prediction_timestamp=prediction_timestamp,
+            metadata=model_service.load_metadata(),
+        )
         logger.info(
             "prediction_completed deployment_id=%s model_version=%s mlflow_run_id=%s "
             "model_version_id=%s pipeline_sha256=%s artifact_manifest_sha256=%s "
@@ -52,6 +61,11 @@ def predict_single(payload: Any) -> dict[str, Any]:
             operational.get("artifact_manifest_sha256"),
             operational.get("integrity_status"),
         )
+    except PredictionPersistenceError as exc:
+        logger.error("single_prediction_persistence_failed")
+        raise PredictionExecutionError(
+            "Internal server error: prediction could not be persisted"
+        ) from exc
     except Exception as exc:
         logger.exception("Single prediction failed")
         raise PredictionExecutionError(f"Internal server error: {exc}") from exc
@@ -61,5 +75,5 @@ def predict_single(payload: Any) -> dict[str, Any]:
         "predicted_label": label,
         "p_churn": probability,
         **metadata,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": prediction_timestamp.isoformat(),
     }

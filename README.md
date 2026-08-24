@@ -207,7 +207,9 @@ Create a baseline JSON record containing the exact model version, immutable `s3:
 python -m src.monitoring register-baseline --file baseline-v1.json
 ```
 
-The reference must be Parquet or CSV, contain at least the configured minimum rows, match the policy feature schema, and include `prediction_probability` and `predicted_class`. Its bytes are checksum-verified before Evidently runs. The producer for `prediction_events` must write only approved canonical features plus prediction output/identity metadata; the monitoring worker does not collect data from prediction HTTP handlers.
+The reference must be Parquet or CSV, contain at least the configured minimum rows, match the policy feature schema, and include `prediction_probability` and `predicted_class`. Its bytes are checksum-verified before Evidently runs. The prediction API appends one `prediction_events` row for every successfully returned single prediction and every valid row in a successful or partial batch. Batch caller identifiers are used only in the response and are never persisted. The insert contains only approved canonical features plus prediction output and verified deployment identity metadata; a failed insert fails the API request, and a batch is committed atomically. Public prediction requests remain `monitoring_eligible=false` because they do not carry a trusted tokenized customer identity for outcome attribution.
+
+The prediction runtime role needs `INSERT` on `prediction_events` and access to its generated identity sequence. Grant those privileges to the dedicated prediction role through the platform migration/admin identity; do not broaden the role to schema ownership or customer-level monitoring reads.
 
 Manual local/operations execution is:
 

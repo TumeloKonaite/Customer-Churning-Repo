@@ -18,8 +18,9 @@ from src.schemas.batch_prediction import (
     BatchPredictionRecord,
 )
 from src.schemas.prediction import REQUIRED_FIELDS
-from src.services import model_service
+from src.services import model_service, prediction_event_service
 from src.services.exceptions import BatchContractViolation, PredictionExecutionError
+from src.services.prediction_event_service import PredictionPersistenceError
 from src.services.prediction_validation import validate_record, validation_error_details
 
 
@@ -157,6 +158,22 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
     model_service.ensure_artifacts_ready()
     try:
         result = predict_batch_records(records, options)
+        if result["results"]:
+            validation = validate_batch(records, mode)
+            features_by_source_index = {
+                validation["row_map"][valid_index]: features
+                for valid_index, features in enumerate(validation["valid_rows"])
+            }
+            result_rows = result["results"]
+            prediction_event_service.persist_prediction_events(
+                feature_rows=[
+                    features_by_source_index[item["index"]] for item in result_rows
+                ],
+                labels=[item["predicted_label"] for item in result_rows],
+                probabilities=[item["p_churn"] for item in result_rows],
+                prediction_timestamp=datetime.fromisoformat(result["timestamp"]),
+                metadata=model_service.load_metadata(),
+            )
         operational = model_service.operational_metadata()
         logger.info(
             "batch_prediction_completed deployment_id=%s model_version=%s "
@@ -173,6 +190,11 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
         return result
     except ValueError as exc:
         raise BatchContractViolation(str(exc)) from exc
+    except PredictionPersistenceError as exc:
+        logger.error("batch_prediction_persistence_failed")
+        raise PredictionExecutionError(
+            "Internal server error: predictions could not be persisted"
+        ) from exc
     except Exception as exc:
         logger.exception("Batch prediction failed")
         raise PredictionExecutionError(f"Internal server error: {exc}") from exc
