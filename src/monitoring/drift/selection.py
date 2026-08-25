@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 
-from src.monitoring.models import (
+from src.monitoring.shared.models import (
     ExtractionWatermark,
     MonitoringPolicy,
     PredictionRecord,
@@ -83,4 +83,3 @@ def deterministically_limit(
         reverse=True,
     )[:maximum_rows]
     return tuple(sorted(newest, key=lambda row: (row.prediction_timestamp, row.event_id)))
-

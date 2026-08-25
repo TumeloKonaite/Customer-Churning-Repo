@@ -10,7 +10,7 @@ class APIServiceError(Exception):
 
 
 class BatchContractViolation(APIServiceError):
-    """A malformed JSON or CSV batch contract."""
+    """A malformed JSON batch contract."""
 
 
 class ModelNotReadyError(APIServiceError):

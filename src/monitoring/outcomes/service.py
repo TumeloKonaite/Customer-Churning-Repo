@@ -9,13 +9,13 @@ from typing import Any, Callable, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, field_validator, model_validator
 
-from src.monitoring.contracts import (
+from src.monitoring.shared.identity import (
     CONTRACT_VERSION,
     QUALIFYING_CHURN_EVENT_TYPES,
     ContractViolation,
     tokenize_customer_id,
 )
-from src.monitoring.models import canonical_json_bytes, timestamp
+from src.monitoring.shared.models import canonical_json_bytes, timestamp
 
 
 EARLIEST_OPERATIONAL_TIMESTAMP = datetime(1970, 1, 1, tzinfo=timezone.utc)

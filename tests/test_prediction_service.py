@@ -1,11 +1,8 @@
-import io
-
 import pytest
 from pydantic import ValidationError
 
 from src.schemas.batch_prediction import MAX_BATCH_SIZE, BatchPredictionRequest
-from src.schemas.prediction import REQUIRED_FIELDS
-from src.services import batch_prediction_service, model_service, single_prediction_service
+from src.services import model_service, single_prediction_service
 from src.services.exceptions import APIServiceError
 
 
@@ -66,16 +63,3 @@ def test_batch_payload_validation_uses_the_pydantic_contract():
         BatchPredictionRequest.model_validate(
             {"records": [valid_record()] * (MAX_BATCH_SIZE + 1)}
         )
-
-
-def test_csv_parser_uses_the_canonical_prediction_fields():
-    record = valid_record()
-    csv = ",".join(REQUIRED_FIELDS) + "\n"
-    csv += ",".join(str(record[field]) for field in REQUIRED_FIELDS) + "\n"
-
-    records = batch_prediction_service.parse_csv_upload_records(
-        "batch.csv", io.BytesIO(csv.encode())
-    )
-
-    assert len(records) == 1
-    assert set(REQUIRED_FIELDS) <= set(records[0])

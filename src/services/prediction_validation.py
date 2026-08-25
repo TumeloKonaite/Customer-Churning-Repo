@@ -1,4 +1,4 @@
-"""Pydantic-backed validation shared by non-HTTP and CSV prediction paths."""
+"""Pydantic-backed validation shared by prediction service paths."""
 
 from __future__ import annotations
 

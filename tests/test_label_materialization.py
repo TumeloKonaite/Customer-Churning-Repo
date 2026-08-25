@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from src.monitoring.labels import (
+from src.monitoring.performance.labels import (
     LabelStatus,
     LabelingPrediction,
     OutcomeSnapshot,

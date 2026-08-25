@@ -24,7 +24,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from src.monitoring.models import canonical_json_bytes, require_utc, timestamp
+from src.monitoring.shared.models import canonical_json_bytes, require_utc, timestamp
 
 
 class PerformanceRecord(BaseModel):

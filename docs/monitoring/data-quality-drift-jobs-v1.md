@@ -1,7 +1,8 @@
 # Data-quality and drift jobs v1
 
 This is the operations and reproducibility contract for `policy_version=1.0.0`.
-It is separate from the delayed-outcome contract. Evidently is executed only by
+It is separate from the delayed-outcome contract. Evidently 0.7.21 is deliberately
+pinned and executed only by
 the scheduled/manual Modal functions in `modal_app.py`; FastAPI imports neither
 the runner nor Evidently and performs no report work.
 

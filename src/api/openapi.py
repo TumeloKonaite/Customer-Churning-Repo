@@ -11,11 +11,11 @@ from src.schemas.batch_prediction import (
 from src.schemas.errors import BatchContractError
 from src.schemas.prediction import SinglePredictionRequest
 from src.api.routes.outcomes import OutcomeBatchEnvelope, SourceWatermarkRequest
-from src.monitoring.outcomes import OutcomeIngestionRequest, OutcomeReference
+from src.monitoring.outcomes.models import OutcomeIngestionRequest, OutcomeReference
 
 
 def build_openapi_schema(app: FastAPI):
-    """Build the OpenAPI schema and retain the explicit CSV upload shape."""
+    """Build the OpenAPI schema with explicit public request contracts."""
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -43,13 +43,6 @@ def build_openapi_schema(app: FastAPI):
         )
         schemas.update(model_schema.pop("$defs", {}))
         schemas[model.__name__] = model_schema
-
-    csv_body_schema = schema["paths"]["/api/batch_predict_csv"]["post"]["requestBody"][
-        "content"
-    ]["multipart/form-data"]["schema"]
-    if "$ref" in csv_body_schema:
-        csv_body_schema = schemas[csv_body_schema["$ref"].rsplit("/", 1)[-1]]
-    csv_body_schema["properties"]["file"]["format"] = "binary"
 
     app.openapi_schema = schema
     return app.openapi_schema

@@ -1,7 +1,10 @@
-"""Executable examples for production-monitoring contract version 1.0.0.
+"""Identity, privacy, and executable contract rules for monitoring version 1.0.0.
 
-This module deliberately does not implement outcome ingestion or persistence.  It
-provides the pure, deterministic rules that those components must obey.
+This module deliberately does not implement outcome ingestion or persistence. It
+provides small reference types used only by the executable v1 contract tests.
+Operational exchanged and persisted models are authoritative in the outcomes and
+performance capability packages; these reference types never cross those storage
+boundaries.
 """
 
 from __future__ import annotations

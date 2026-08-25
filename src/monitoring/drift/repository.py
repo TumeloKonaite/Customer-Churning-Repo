@@ -7,7 +7,7 @@ from typing import Any
 
 from sqlalchemy import Engine, text
 
-from src.monitoring.models import (
+from src.monitoring.shared.models import (
     BaselineVersion,
     ExtractionWatermark,
     MonitoringPolicy,

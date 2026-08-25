@@ -1,5 +1,5 @@
 import type {
-  BatchMode,
+  BatchPredictionRequest,
   BatchResponse,
   HealthResponse,
   PredictionRequest,
@@ -100,17 +100,14 @@ export async function predictCustomer(payload: PredictionRequest): Promise<Predi
   });
 }
 
-export function createBatchFormData(file: File, mode: BatchMode): FormData {
-  const body = new FormData();
-  body.append("file", file);
-  body.append("options", JSON.stringify({ mode }));
-  return body;
-}
-
-export async function predictBatch(file: File, mode: BatchMode): Promise<BatchResponse> {
+export async function predictBatch(payload: BatchPredictionRequest): Promise<BatchResponse> {
   return request<BatchResponse>(
-    "/api/batch_predict_csv",
-    { method: "POST", headers: { Accept: "application/json" }, body: createBatchFormData(file, mode) },
+    "/api/predict/batch",
+    {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
     BATCH_TIMEOUT_MS,
   );
 }

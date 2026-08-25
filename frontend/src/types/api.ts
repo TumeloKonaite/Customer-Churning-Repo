@@ -41,6 +41,17 @@ export interface PredictionResponse {
 
 export type BatchMode = "partial" | "fail_fast";
 
+export interface BatchPredictionRecord extends PredictionRequest {
+  customer_id?: string | number | null;
+  row_id?: string | number | null;
+  id?: string | number | null;
+}
+
+export interface BatchPredictionRequest {
+  records: BatchPredictionRecord[];
+  options?: { mode: BatchMode };
+}
+
 export interface BatchResultItem {
   index: number;
   id: unknown | null;

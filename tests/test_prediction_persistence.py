@@ -4,7 +4,7 @@ from datetime import datetime
 import pytest
 
 from src.config import DatabaseSettings
-from src.monitoring.prediction_repository import (
+from src.database.prediction_events import (
     PendingPredictionEvent,
     PredictionEventRepository,
 )

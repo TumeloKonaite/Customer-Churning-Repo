@@ -10,10 +10,10 @@ import sys
 
 from src.config import DatabaseSettings, MonitoringSettings, safe_error_message
 from src.database import create_database_engine
-from src.monitoring.artifacts import LocalArtifactStore, S3ArtifactStore
-from src.monitoring.job import MonitoringJob
-from src.monitoring.models import BaselineVersion, MonitoringPolicy
-from src.monitoring.repository import MonitoringRepository
+from src.monitoring.shared.artifacts import LocalArtifactStore, S3ArtifactStore
+from src.monitoring.drift.service import MonitoringJob
+from src.monitoring.shared.models import BaselineVersion, MonitoringPolicy
+from src.monitoring.drift.repository import MonitoringRepository
 
 
 def _json_file(path: str) -> dict:

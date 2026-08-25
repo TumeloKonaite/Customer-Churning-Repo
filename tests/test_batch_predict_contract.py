@@ -1,6 +1,3 @@
-import io
-import json
-
 import application
 import src.services.batch_prediction_service as batch_prediction_service
 from fastapi.testclient import TestClient
@@ -25,15 +22,6 @@ def valid_record():
         "IsActiveMember": 1,
         "EstimatedSalary": 101348.88,
     }
-
-
-def csv_upload_from_records(records):
-    extra_headers = [key for key in ("customer_id", "row_id", "id") if any(key in row for row in records)]
-    headers = list(REQUIRED_FIELDS) + extra_headers
-    lines = [",".join(headers)]
-    for record in records:
-        lines.append(",".join(str(record.get(header, "")) for header in headers))
-    return {"file": ("batch.csv", io.BytesIO(("\n".join(lines) + "\n").encode()), "text/csv")}
 
 
 class FakePredictPipeline:
@@ -160,43 +148,6 @@ def test_batch_returns_503_when_model_is_not_ready(monkeypatch):
     assert response.status_code == 503
 
 
-def test_batch_csv_uses_same_prediction_contract(monkeypatch):
-    patch_batch_execution(monkeypatch, labels=[1], probabilities=[0.73])
-    record = valid_record()
-    record["customer_id"] = "csv-1"
-    response = client.post(
-        "/api/batch_predict_csv",
-        files=csv_upload_from_records([record]),
-        data={"options": json.dumps({"mode": "partial"})},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert_prediction_only_envelope(body)
-    assert body["results"] == [
-        {"index": 0, "id": "csv-1", "predicted_label": 1, "p_churn": 0.73}
-    ]
-
-
-def test_batch_csv_rejects_invalid_options_and_missing_columns():
-    invalid_options = client.post(
-        "/api/batch_predict_csv",
-        files=csv_upload_from_records([valid_record()]),
-        data={"options": "{bad"},
-    )
-    assert invalid_options.status_code == 400
-    assert "Invalid options JSON" in invalid_options.json()["message"]
-
-    csv_body = b"CreditScore,Geography\n619,France\n"
-    missing_columns = client.post(
-        "/api/batch_predict_csv",
-        files={"file": ("batch.csv", io.BytesIO(csv_body), "text/csv")},
-    )
-    assert missing_columns.status_code == 400
-    assert "missing required columns" in missing_columns.json()["message"]
-
-
-def test_batch_csv_missing_file_preserves_contract_error():
-    response = client.post("/api/batch_predict_csv", data={"options": '{"mode":"partial"}'})
-    assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"][-1] == "file"
+def test_removed_prediction_aliases_are_not_routable():
+    assert client.post("/api/batch_predict", json={}).status_code == 404
+    assert client.post("/api/batch_predict_csv").status_code == 404

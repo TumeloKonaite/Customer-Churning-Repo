@@ -8,7 +8,7 @@
 | Required approvers | Business Churn Owner; Customer Data Owner; Security Officer; Privacy Officer |
 | Approval date | Pending |
 | Effective date | Pending; must be after all approvals |
-| Implementation | `src/monitoring/contracts.py` |
+| Implementation | `src/monitoring/shared/identity.py` |
 | Change history | 1.0.0 (2026-08-20): initial proposed contract |
 
 This document is the single versioned contract bundle for churn labels, horizons,
@@ -124,10 +124,11 @@ prediction” join is prohibited.
 - Duplicate outcome events do not create duplicate labels. Corrections rematerialize
   every affected prediction while retaining label revision history.
 
-The current public prediction response does not expose `prediction_id` and the
-application does not persist predictions. Those implementation changes remain a
-prerequisite for production monitoring; they are intentionally outside this
-contract issue.
+The current public prediction response does not expose `prediction_id` or accept a
+trusted tokenized identity. The application persists privacy-safe prediction
+events with `monitoring_eligible=false`; these rows must not be attributed to
+outcomes. Trusted identity, horizon, and idempotency integration remain separate
+prerequisites for production performance monitoring.
 
 ## 4. Customer identity and HMAC tokenization
 
@@ -329,7 +330,7 @@ and all blocking decisions below are resolved.
 
 ## Executable examples and traceability
 
-`src/monitoring/contracts.py` is the executable reference for the unambiguous v1
+`src/monitoring/shared/identity.py` is the executable reference for the unambiguous v1
 rules. `tests/test_monitoring_contracts.py` covers:
 
 - immediately before/exactly at prediction time and exactly at/immediately after

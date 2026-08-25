@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.monitoring.models import MonitoringPolicy, ResultStatus
+from src.monitoring.shared.models import MonitoringPolicy, ResultStatus
 
 
 class MonitoringValidationError(ValueError):
@@ -146,4 +146,3 @@ def data_quality_summary(
         "checks": checks,
         "feature_results": feature_results,
     }
-

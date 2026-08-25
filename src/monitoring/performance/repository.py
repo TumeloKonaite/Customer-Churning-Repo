@@ -8,12 +8,12 @@ from typing import Any, Mapping
 
 from sqlalchemy import Engine, bindparam, text
 
-from src.monitoring.labels import (
+from src.monitoring.performance.labels import (
     LabelingPrediction,
     LabelRevision,
     OutcomeSnapshot,
 )
-from src.monitoring.outcomes import CanonicalOutcome
+from src.monitoring.outcomes.models import CanonicalOutcome
 
 
 class LabelRepository:
@@ -372,3 +372,10 @@ def _simulation_scope(
     if not generator or not scenario:
         raise ValueError("simulated labels require generator and scenario version")
     return f"simulation:{len(generator)}:{generator}:{len(scenario)}:{scenario}"
+
+
+# Kept as one implementation during the schema-preserving refactor; consumers use
+# this repository boundary while the orchestration module remains database-agnostic.
+from src.monitoring.performance.service import PerformanceRepository  # noqa: E402
+
+__all__ = ["LabelRepository", "PerformanceRepository"]
