@@ -8,7 +8,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 from urllib.parse import quote, urlparse
 
-from src.monitoring.models import canonical_json_bytes, sha256_bytes
+from src.monitoring.shared.models import canonical_json_bytes, sha256_bytes
 
 
 class ArtifactConflictError(RuntimeError):

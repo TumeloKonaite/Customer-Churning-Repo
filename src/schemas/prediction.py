@@ -59,7 +59,7 @@ class SinglePredictionRequest(BaseModel):
     )
 
 
-# Keep validation, CSV ingestion, and OpenAPI generation on one canonical field list.
+# Keep service validation and OpenAPI generation on one canonical field list.
 REQUIRED_FIELDS = list(CANONICAL_FEATURE_ORDER)
 
 

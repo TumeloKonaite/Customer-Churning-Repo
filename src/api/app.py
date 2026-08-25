@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.errors import register_exception_handlers
 from src.api.openapi import build_openapi_schema
-from src.api.routes import health, outcomes, predictions, web
+from src.api.routes import health, outcomes, predictions
 from src.schemas.batch_prediction import MAX_BATCH_SIZE
 
 
@@ -35,7 +35,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Customer Churn Prediction API",
         description=(
-            "Train-backed customer churn predictions for individual customers and JSON or CSV "
+            "Train-backed customer churn predictions for individual customers and JSON "
             f"batches. Batch requests support fail_fast and partial modes and at most "
             f"{MAX_BATCH_SIZE} records."
         ),
@@ -57,6 +57,5 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(predictions.router)
     app.include_router(outcomes.router)
-    app.include_router(web.router)
     app.openapi = partial(build_openapi_schema, app)
     return app

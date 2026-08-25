@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from src.monitoring.contracts import (
+from src.monitoring.shared.identity import (
     ContractViolation,
     LabelState,
     Outcome,

@@ -1,4 +1,8 @@
-"""Append-only PostgreSQL persistence for production prediction events."""
+"""Append-only PostgreSQL persistence for production prediction events.
+
+This repository belongs to the inference write path and has no monitoring-package
+dependency. Public prediction events remain attribution-ineligible by design.
+"""
 
 from __future__ import annotations
 

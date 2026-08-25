@@ -1,14 +1,12 @@
-"""JSON and CSV batch-prediction orchestration."""
+"""JSON batch-prediction orchestration."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import json
 import logging
-from typing import Any, BinaryIO
+from typing import Any
 
 import pandas as pd
-from pydantic import ValidationError
 
 from src.pipeline.prediction_pipeline import PredictPipeline
 from src.schemas.batch_prediction import (
@@ -25,7 +23,6 @@ from src.services.prediction_validation import validate_record, validation_error
 
 
 logger = logging.getLogger(__name__)
-IDENTIFIER_FIELDS = {"customer_id", "row_id", "id"}
 
 
 def _timestamp_now() -> str:
@@ -151,7 +148,7 @@ def predict_batch_records(records: Any, options: Any | None = None) -> dict[str,
 
 
 def predict_batch(records: list, options: dict) -> dict[str, Any]:
-    """Check readiness and execute a validated JSON or CSV batch."""
+    """Check readiness and execute a validated JSON batch."""
     mode = options.get("mode", "fail_fast")
     if mode not in VALID_BATCH_MODES:
         raise BatchContractViolation("options.mode must be one of: fail_fast, partial")
@@ -198,65 +195,3 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Batch prediction failed")
         raise PredictionExecutionError(f"Internal server error: {exc}") from exc
-
-
-def parse_batch_options_json(options_raw: str | None) -> dict:
-    if options_raw is None or not str(options_raw).strip():
-        return {}
-    try:
-        options = json.loads(options_raw)
-    except json.JSONDecodeError as exc:
-        raise BatchContractViolation(f"Invalid options JSON: {exc.msg}") from exc
-    if not isinstance(options, dict):
-        raise BatchContractViolation("Field 'options' must be an object")
-    try:
-        return BatchOptions.model_validate(options).model_dump()
-    except ValidationError as exc:
-        raise BatchContractViolation(f"Invalid batch options: {exc.errors()[0]['msg']}") from exc
-
-
-def parse_csv_upload_records(filename: str | None, file: BinaryIO | None) -> list[dict]:
-    if file is None:
-        raise BatchContractViolation("Field 'file' is required")
-
-    normalized_filename = (filename or "").strip()
-    if not normalized_filename:
-        raise BatchContractViolation("Uploaded filename must not be empty")
-    if not normalized_filename.lower().endswith(".csv"):
-        raise BatchContractViolation("Uploaded file must be a .csv")
-
-    try:
-        frame = pd.read_csv(file)
-    except (pd.errors.ParserError, pd.errors.EmptyDataError, UnicodeDecodeError, ValueError) as exc:
-        raise BatchContractViolation(f"CSV could not be parsed: {exc}") from exc
-
-    frame = frame.dropna(how="all")
-    if frame.empty:
-        raise BatchContractViolation("CSV must contain at least one data row")
-    missing_columns = [field for field in REQUIRED_FIELDS if field not in frame.columns]
-    if missing_columns:
-        raise BatchContractViolation(
-            f"CSV is missing required columns: {', '.join(missing_columns)}"
-        )
-    unexpected_columns = [
-        column
-        for column in frame.columns
-        if column not in REQUIRED_FIELDS and column not in IDENTIFIER_FIELDS
-    ]
-    if unexpected_columns:
-        raise BatchContractViolation(
-            f"CSV contains unexpected columns: {', '.join(unexpected_columns)}"
-        )
-
-    records = frame.to_dict(orient="records")
-    if len(records) > MAX_BATCH_SIZE:
-        raise BatchContractViolation(
-            f"Batch size exceeds MAX_BATCH_SIZE ({MAX_BATCH_SIZE})", status_code=413
-        )
-    return records
-
-
-def predict_csv_batch(filename: str | None, file: BinaryIO | None, options_raw: str | None):
-    options = parse_batch_options_json(options_raw)
-    records = parse_csv_upload_records(filename, file)
-    return predict_batch(records, options)

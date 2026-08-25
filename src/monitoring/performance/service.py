@@ -9,13 +9,13 @@ from typing import Any, Callable, Mapping, Protocol
 
 from sqlalchemy import Engine, text
 
-from src.monitoring.artifacts import (
+from src.monitoring.shared.artifacts import (
     ArtifactStore,
     performance_artifact_prefix,
     publish_report_bundle,
 )
-from src.monitoring.models import require_utc
-from src.monitoring.performance import (
+from src.monitoring.shared.models import require_utc
+from src.monitoring.performance.metrics import (
     CohortDefinition,
     PerformanceRecord,
     build_performance_report,

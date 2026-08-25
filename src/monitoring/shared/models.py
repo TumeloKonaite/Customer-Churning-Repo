@@ -1,4 +1,4 @@
-"""Versioned monitoring configuration and reproducible run metadata."""
+"""Shared monitoring configuration, statuses, and reproducible identities."""
 
 from __future__ import annotations
 

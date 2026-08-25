@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from src.config import DatabaseSettings
 from src.database import create_database_engine
-from src.monitoring.prediction_repository import (
+from src.database.prediction_events import (
     PendingPredictionEvent,
     PredictionEventRepository,
 )

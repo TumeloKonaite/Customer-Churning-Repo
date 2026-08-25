@@ -84,8 +84,8 @@ def _execute_monitoring(scheduled_for: str | None = None):
     from src.config import DatabaseSettings, MonitoringSettings
     from src.database import create_database_engine
     from src.monitoring.__main__ import _store
-    from src.monitoring.job import MonitoringJob
-    from src.monitoring.repository import MonitoringRepository
+    from src.monitoring.drift.service import MonitoringJob
+    from src.monitoring.drift.repository import MonitoringRepository
 
     settings = MonitoringSettings()
     engine = create_database_engine(DatabaseSettings())
@@ -141,8 +141,8 @@ def _execute_label_materialization(as_of: str | None = None):
 
     from src.config import DatabaseSettings, OutcomeMonitoringSettings
     from src.database import create_database_engine
-    from src.monitoring.label_repository import LabelRepository
-    from src.monitoring.labels import LabelMaterializationJob
+    from src.monitoring.performance.repository import LabelRepository
+    from src.monitoring.performance.labels import LabelMaterializationJob
 
     settings = OutcomeMonitoringSettings()
     engine = create_database_engine(DatabaseSettings())
@@ -198,9 +198,9 @@ def _execute_performance(as_of: str | None = None):
     from src.config import DatabaseSettings, MonitoringSettings, OutcomeMonitoringSettings
     from src.database import create_database_engine
     from src.monitoring.__main__ import _store
-    from src.monitoring.label_repository import LabelRepository
-    from src.monitoring.labels import LabelMaterializationJob
-    from src.monitoring.performance_job import PerformanceJob, PerformanceRepository
+    from src.monitoring.performance.repository import LabelRepository, PerformanceRepository
+    from src.monitoring.performance.labels import LabelMaterializationJob
+    from src.monitoring.performance.service import PerformanceJob
 
     settings = OutcomeMonitoringSettings()
     artifact_settings = MonitoringSettings()

@@ -1,15 +1,14 @@
-"""Thin HTTP adapters for single, JSON batch, and CSV batch predictions."""
+"""HTTP adapters for the single and JSON batch prediction endpoints."""
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from src.schemas.batch_prediction import (
     BATCH_PREDICTION_EXAMPLE,
-    MAX_BATCH_SIZE,
     BatchPredictionRequest,
     BatchResponse,
 )
-from src.schemas.errors import BatchContractError, StandardAPIError
+from src.schemas.errors import StandardAPIError
 from src.schemas.prediction import (
     SINGLE_PREDICTION_EXAMPLE,
     SinglePredictionRequest,
@@ -58,7 +57,6 @@ def predict_api(
     return single_prediction_service.predict_single(payload)
 
 
-BATCH_BAD_REQUEST_MODEL = BatchResponse | BatchContractError
 BATCH_RESPONSES = {
     415: {"model": StandardAPIError, "description": "Unsupported content type"},
     503: {"model": StandardAPIError, "description": "Model artifacts are unavailable"},
@@ -97,48 +95,3 @@ def predict_batch_api(
     _: None = Depends(require_json_content_type),
 ):
     return _batch_response(payload)
-
-
-@router.post(
-    "/api/batch_predict",
-    response_model=BatchResponse,
-    responses=BATCH_RESPONSES,
-    tags=["Predictions"],
-    summary="Predict churn for a JSON batch (compatibility alias)",
-    response_model_exclude_unset=True,
-    openapi_extra=BATCH_OPENAPI_BODY,
-)
-def predict_batch_api_alias(
-    payload: BatchPredictionRequest,
-    _: None = Depends(require_json_content_type),
-):
-    return _batch_response(payload)
-
-
-@router.post(
-    "/api/batch_predict_csv",
-    response_model=BatchResponse,
-    responses={
-        400: {
-            "model": BATCH_BAD_REQUEST_MODEL,
-            "description": "CSV or batch contract validation error",
-        },
-        413: {"model": BatchContractError, "description": f"More than {MAX_BATCH_SIZE} records"},
-        503: {"model": StandardAPIError, "description": "Model artifacts are unavailable"},
-        500: {"model": StandardAPIError, "description": "Prediction failure"},
-    },
-    tags=["Predictions"],
-    summary="Predict churn from a CSV file",
-    response_model_exclude_unset=True,
-)
-def predict_batch_csv_api(
-    file: UploadFile = File(description="CSV containing the ten required model fields"),
-    options: str | None = Form(
-        default=None,
-        description='Optional JSON object, for example {"mode":"partial"}',
-        examples=['{"mode":"partial"}'],
-    ),
-):
-    body = batch_prediction_service.predict_csv_batch(file.filename, file.file, options)
-    status_code = 400 if body.get("status") == "error" else 200
-    return JSONResponse(body, status_code=status_code)

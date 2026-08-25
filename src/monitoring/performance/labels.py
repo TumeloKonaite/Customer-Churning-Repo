@@ -10,9 +10,9 @@ from typing import Any, Callable, Iterable, Mapping, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.monitoring.contracts import CONTRACT_VERSION, QUALIFYING_CHURN_EVENT_TYPES
-from src.monitoring.models import canonical_json_bytes, require_utc, timestamp
-from src.monitoring.outcomes import CanonicalOutcome, OutcomeOperation
+from src.monitoring.shared.identity import CONTRACT_VERSION, QUALIFYING_CHURN_EVENT_TYPES
+from src.monitoring.shared.models import canonical_json_bytes, require_utc, timestamp
+from src.monitoring.outcomes.models import CanonicalOutcome, OutcomeOperation
 
 
 class LabelStatus(StrEnum):

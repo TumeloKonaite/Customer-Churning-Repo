@@ -14,10 +14,13 @@ from starlette.concurrency import run_in_threadpool
 
 from src.config import DatabaseSettings, OutcomeIngestionSettings
 from src.database import create_database_engine
-from src.monitoring.models import require_utc, timestamp
-from src.monitoring.outcome_repository import OutcomeRepository
-from src.monitoring.outcomes import OutcomeConflictError, OutcomeIngestionService
-from src.monitoring.outcomes import OutcomeIngestionRequest
+from src.monitoring.shared.models import require_utc, timestamp
+from src.monitoring.outcomes.repository import OutcomeRepository
+from src.monitoring.outcomes.service import (
+    OutcomeConflictError,
+    OutcomeIngestionRequest,
+    OutcomeIngestionService,
+)
 from src.services.exceptions import APIServiceError
 
 

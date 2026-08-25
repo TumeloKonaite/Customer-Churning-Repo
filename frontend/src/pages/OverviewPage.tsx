@@ -24,10 +24,10 @@ export function OverviewPage() {
         <div>
           <p className="eyebrow">Customer decision support</p>
           <h1 className="mt-3 max-w-3xl text-4xl font-bold tracking-[-0.035em] text-navy-950 sm:text-5xl lg:text-6xl">Understand churn risk earlier</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Use the deployed machine-learning model to assess individual customers or process a CSV batch.</p>
+          <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-600">Use the deployed machine-learning model to assess individual customers or process a JSON batch.</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link to="/predict" className="button-primary">Assess a customer <ArrowRight className="h-4 w-4" aria-hidden="true" /></Link>
-            <Link to="/batch" className="button-secondary"><FileSpreadsheet className="h-4 w-4" aria-hidden="true" /> Upload a batch</Link>
+            <Link to="/batch" className="button-secondary"><FileSpreadsheet className="h-4 w-4" aria-hidden="true" /> Submit a batch</Link>
           </div>
           <p className="mt-6 flex max-w-2xl items-start gap-2 text-sm leading-6 text-slate-600"><ScanSearch className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden="true" /> Predictions are estimates and decision-support signals. They should be considered alongside appropriate human judgment.</p>
         </div>
@@ -44,9 +44,9 @@ export function OverviewPage() {
     <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
       <div className="mb-8"><p className="eyebrow">A focused workflow</p><h2 className="mt-2 text-2xl font-bold text-navy-950 sm:text-3xl">How it works</h2></div>
       <ol className="grid gap-5 md:grid-cols-3">
-        {[["01", "Enter customer data", "Provide the ten model inputs for one customer, or select a compatible CSV."], ["02", "Run the assessment", "The data is sent directly to the configured prediction API for processing."], ["03", "Review the estimate", "See the risk label, available probability, and exact model deployment metadata."]].map(([number, title, copy]) => <li className="card p-6" key={number}><span className="text-sm font-bold text-teal-700">{number}</span><h3 className="mt-4 text-lg font-bold text-navy-900">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{copy}</p></li>)}
+        {[["01", "Enter customer data", "Provide the ten model inputs for one customer or a JSON records array."], ["02", "Run the assessment", "The data is sent directly to the configured prediction API for processing."], ["03", "Review the estimate", "See the risk label, available probability, and exact model deployment metadata."]].map(([number, title, copy]) => <li className="card p-6" key={number}><span className="text-sm font-bold text-teal-700">{number}</span><h3 className="mt-4 text-lg font-bold text-navy-900">{title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{copy}</p></li>)}
       </ol>
-      <div className="mt-8 flex items-start gap-4 rounded-2xl border border-teal-100 bg-teal-50 p-5"><LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-teal-800" aria-hidden="true" /><div><h2 className="font-semibold text-navy-900">Privacy by design</h2><p className="mt-1 text-sm leading-6 text-slate-600">Form and CSV data is sent only to the configured prediction API. This interface does not persist customer inputs or send them to analytics.</p></div></div>
+      <div className="mt-8 flex items-start gap-4 rounded-2xl border border-teal-100 bg-teal-50 p-5"><LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-teal-800" aria-hidden="true" /><div><h2 className="font-semibold text-navy-900">Privacy by design</h2><p className="mt-1 text-sm leading-6 text-slate-600">Form and JSON batch data is sent only to the configured prediction API. This interface does not send customer inputs to analytics.</p></div></div>
     </section>
   </>;
 }

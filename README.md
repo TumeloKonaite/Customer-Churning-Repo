@@ -26,7 +26,7 @@ python -m pip install -r requirements.txt
 
 ## Churn Insight React frontend
 
-The browser application lives in [`frontend/`](frontend/). It provides the live service overview, single-customer assessment, CSV batch assessment (up to 100 records), partial and fail-fast processing, row-level errors, and CSV result export. The FastAPI service remains the only backend.
+The browser application lives in [`frontend/`](frontend/). It provides the live service overview, single-customer assessment, JSON batch assessment (up to 100 records), partial and fail-fast processing, and row-level errors. The FastAPI service remains the only backend.
 
 Prerequisites are Node.js 20+ and npm 10+. Start it locally with:
 
@@ -222,7 +222,7 @@ python -m src.monitoring run \
 
 Modal deploys `scheduled_monitoring` at `15 */6 * * *` UTC and exposes `run_monitoring` for manual debugging. Both have three bounded retries; neither is called by FastAPI. Successful runs publish `report.html`, strict `report.json`, normalized `summary.json`, and `checksums.json` beneath the immutable model/baseline/run prefix. Insufficient-volume runs publish only a non-green summary and checksums and persist `insufficient_data`, not `completed`.
 
-Policy v1 values—including row counts, ranges, methods, and thresholds—are explicitly initial hypotheses. Calibrate them from observed production volume and distributions. Any result-affecting change requires a new policy version; a changed reference requires a new baseline version. See [data-quality-drift-jobs-v1.md](docs/monitoring/data-quality-drift-jobs-v1.md) for the complete run/reproduction contract.
+Policy v1 values—including row counts, ranges, methods, and thresholds—are explicitly initial hypotheses. Calibrate them from observed production volume and distributions. Any result-affecting change requires a new policy version; a changed reference requires a new baseline version. Start with the concise [monitoring operations guide](docs/monitoring/README.md); the detailed reproducibility contract remains in [data-quality-drift-jobs-v1.md](docs/monitoring/data-quality-drift-jobs-v1.md).
 
 ## Outcome labels and matured-cohort performance
 
@@ -290,8 +290,7 @@ Endpoints:
 
 - `GET /health`
 - `POST /api/predict`
-- `POST /api/predict/batch` (and compatibility alias `/api/batch_predict`)
-- `POST /api/batch_predict_csv`
+- `POST /api/predict/batch`
 - `POST /api/monitoring/outcomes` (protected; single or partial-success batch)
 - `POST /api/monitoring/outcomes/watermarks` (protected)
 - `/docs`, `/redoc`, and `/openapi.json`

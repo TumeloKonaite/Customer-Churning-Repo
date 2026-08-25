@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import IntegrityError
 
-from src.monitoring.outcomes import (
+from src.monitoring.outcomes.service import (
     CanonicalOutcome,
     OutcomeConflictError,
     OutcomeReferenceError,

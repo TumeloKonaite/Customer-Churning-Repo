@@ -7,14 +7,14 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.monitoring.artifacts import (
+from src.monitoring.shared.artifacts import (
     ArtifactConflictError,
     LocalArtifactStore,
     artifact_prefix,
 )
-from src.monitoring.evidently_runner import EvidentlyOutput
-from src.monitoring.job import MonitoringJob, cadence_slot, schedule_minute_offset
-from src.monitoring.models import (
+from src.monitoring.drift.evidently import EvidentlyOutput
+from src.monitoring.drift.service import MonitoringJob, cadence_slot, schedule_minute_offset
+from src.monitoring.shared.models import (
     BaselineVersion,
     ExtractionWatermark,
     MonitoringPolicy,
@@ -24,8 +24,8 @@ from src.monitoring.models import (
     monitoring_run_id,
     sha256_bytes,
 )
-from src.monitoring.quality import MonitoringValidationError, data_quality_summary
-from src.monitoring.selection import deterministically_limit, eligible_record, select_window
+from src.monitoring.drift.quality import MonitoringValidationError, data_quality_summary
+from src.monitoring.drift.selection import deterministically_limit, eligible_record, select_window
 
 
 UTC = timezone.utc
@@ -188,7 +188,7 @@ def test_data_quality_distinguishes_hard_schema_failures_from_warnings():
                 }
             }
         )
-        from src.monitoring.quality import validate_schema_compatibility
+        from src.monitoring.drift.quality import validate_schema_compatibility
 
         validate_schema_compatibility(
             current,
@@ -307,7 +307,7 @@ def test_completed_run_publishes_bundle_and_rerun_returns_existing(tmp_path):
     )
     calls = []
 
-    def evidently(reference, current, *, policy):
+    def run_report(reference, current, *, policy):
         calls.append((len(reference), len(current), policy.policy_version))
         return EvidentlyOutput(
             html=b"<html>report</html>",
@@ -320,7 +320,7 @@ def test_completed_run_publishes_bundle_and_rerun_returns_existing(tmp_path):
     job = MonitoringJob(
         repository,
         LocalArtifactStore(tmp_path / "reports"),
-        evidently=evidently,
+        report_runner=run_report,
         now=lambda: END,
     )
     first = job.run(environment="production", model_version_id=MODEL, scheduled_for=END)
