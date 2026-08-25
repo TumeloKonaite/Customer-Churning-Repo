@@ -1,0 +1,146 @@
+  <svg viewBox="0 0 1480 930" xmlns="http://www.w3.org/2000/svg">
+<style>.zone{fill:#f8fafc;stroke:#b9c5d8;stroke-width:1.5;stroke-dasharray:5 5}.node{fill:#fff;stroke:#b9c5d8;stroke-width:1.25}.delivery{fill:#f0efff;stroke:#9994ff}.runtime{fill:#eaf8f4;stroke:#79c6b2}.data{fill:#fff3e8;stroke:#f1ad74}.monitor{fill:#fbeaf4;stroke:#dd8cba}.external{fill:#edf1fc;stroke:#8ba1e3}.title{fill:#0b1736;font-size:16px;font-weight:500}.label{fill:#0b1736;font-size:13px;font-weight:500}.detail{fill:#52627a;font-size:10.5px;font-weight:400}.icon{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}.flow{fill:none;stroke:#0b1736;stroke-width:1.5;marker-end:url(#arrow)}.async{fill:none;stroke:#0b1736;stroke-width:1.5;stroke-dasharray:6 5;marker-end:url(#arrow)}.flow-label{fill:#52627a;font-size:9.5px}</style>
+    <defs>
+      <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M 0 0 L 10 5 L 0 10 z" fill="#0b1736"/>
+      </marker>
+    </defs>
+
+    <!-- Client -->
+    <rect class="zone" x="20" y="235" width="155" height="280" rx="14"/>
+    <text class="title" x="97" y="265" text-anchor="middle">Client</text>
+    <rect class="node external" x="42" y="292" width="112" height="155" rx="12"/>
+    <g transform="translate(83 314)" style="color:#4169d8">
+      <rect class="icon" x="0" y="0" width="28" height="38" rx="3"/><line class="icon" x1="8" y1="32" x2="20" y2="32"/>
+    </g>
+    <text class="label" x="98" y="374" text-anchor="middle">Browser user</text>
+    <text class="detail" x="98" y="393" text-anchor="middle">React web app</text>
+    <text class="detail" x="98" y="409" text-anchor="middle">Overview • Single • Batch</text>
+
+    <!-- Runtime -->
+    <rect class="zone" x="285" y="110" width="475" height="460" rx="14"/>
+    <text class="title" x="523" y="140" text-anchor="middle">Modal Application Runtime</text>
+    <rect class="node runtime" x="330" y="175" width="380" height="90" rx="12"/>
+    <g transform="translate(355 200)" style="color:#159a78">
+      <path class="icon" d="M2 20V4h20v16M7 9h10M7 14h10"/>
+    </g>
+    <text class="label" x="405" y="205">FastAPI Application</text>
+    <text class="detail" x="405" y="224">Public prediction API + protected monitoring API</text>
+    <text class="detail" x="405" y="242">Health • Single prediction • JSON batch • Outcomes</text>
+
+    <rect class="node runtime" x="330" y="305" width="180" height="120" rx="12"/>
+    <g transform="translate(350 330)" style="color:#159a78">
+      <circle class="icon" cx="12" cy="12" r="10"/><path class="icon" d="M8 12l3 3 6-7"/>
+    </g>
+    <text class="label" x="390" y="341">Prediction service</text>
+    <text class="detail" x="350" y="371">Input validation</text>
+    <text class="detail" x="350" y="389">Verified packaged model</text>
+    <text class="detail" x="350" y="407">Prediction-event persistence</text>
+
+    <rect class="node runtime" x="530" y="305" width="180" height="120" rx="12"/>
+    <g transform="translate(550 330)" style="color:#159a78">
+      <path class="icon" d="M12 2v20M5 8l7-6 7 6M5 16l7 6 7-6"/>
+    </g>
+    <text class="label" x="590" y="341">Outcome service</text>
+    <text class="detail" x="550" y="371">Trusted-source authentication</text>
+    <text class="detail" x="550" y="389">Outcome validation</text>
+    <text class="detail" x="550" y="407">Source watermark persistence</text>
+
+    <path class="flow" d="M520 265 V287 H420 V305"/>
+    <path class="flow" d="M520 287 H620 V305"/>
+
+    <!-- Data layer -->
+    <rect class="zone" x="880" y="110" width="270" height="460" rx="14"/>
+    <text class="title" x="1015" y="140" text-anchor="middle">Persistent Data Layer</text>
+    <rect class="node data" x="915" y="180" width="200" height="145" rx="12"/>
+    <g transform="translate(940 208)" style="color:#e97718">
+      <ellipse class="icon" cx="13" cy="4" rx="13" ry="4"/><path class="icon" d="M0 4v24c0 2 6 4 13 4s13-2 13-4V4M0 16c0 2 6 4 13 4s13-2 13-4"/>
+    </g>
+    <text class="label" x="985" y="215">Neon PostgreSQL</text>
+    <text class="detail" x="940" y="249">Prediction and outcome events</text>
+    <text class="detail" x="940" y="267">Policies, baselines and labels</text>
+    <text class="detail" x="940" y="285">Monitoring and performance runs</text>
+
+    <rect class="node data" x="915" y="370" width="200" height="140" rx="12"/>
+    <g transform="translate(940 398)" style="color:#e97718">
+      <path class="icon" d="M2 8h8l3 4h13v16H2zM2 8V4h9l3 4"/>
+    </g>
+    <text class="label" x="985" y="407">Artifact storage</text>
+    <text class="detail" x="940" y="441">Approved reference datasets</text>
+    <text class="detail" x="940" y="459">Immutable drift reports</text>
+    <text class="detail" x="940" y="477">Performance reports + checksums</text>
+
+    <!-- External outcomes -->
+    <rect class="zone" x="1230" y="240" width="220" height="210" rx="14"/>
+    <text class="title" x="1340" y="270" text-anchor="middle">External Source</text>
+    <rect class="node external" x="1260" y="305" width="160" height="105" rx="12"/>
+    <g transform="translate(1280 330)" style="color:#4169d8">
+      <path class="icon" d="M3 3h18v18H3zM7 8h10M7 13h7"/><path class="icon" d="M17 17l3 3"/>
+    </g>
+    <text class="label" x="1320" y="338">Trusted outcome source</text>
+    <text class="detail" x="1280" y="368">Outcomes and source watermarks</text>
+    <text class="detail" x="1280" y="386">Authenticated machine client</text>
+
+    <!-- Build and delivery -->
+    <rect class="zone" x="285" y="640" width="865" height="210" rx="14"/>
+    <text class="title" x="718" y="670" text-anchor="middle">Offline Training and Deployment Pipeline</text>
+    <rect class="node delivery" x="325" y="710" width="185" height="95" rx="12"/>
+    <text class="label" x="417" y="740" text-anchor="middle">Local training pipeline</text>
+    <text class="detail" x="417" y="761" text-anchor="middle">Ingest • Validate • Train</text>
+    <text class="detail" x="417" y="778" text-anchor="middle">Evaluate • Package artifacts</text>
+
+    <rect class="node delivery" x="575" y="710" width="185" height="95" rx="12"/>
+    <text class="label" x="667" y="740" text-anchor="middle">DagsHub MLflow</text>
+    <text class="detail" x="667" y="761" text-anchor="middle">Runs • Metrics • Lineage</text>
+    <text class="detail" x="667" y="778" text-anchor="middle">Model registry</text>
+
+    <rect class="node delivery" x="825" y="710" width="280" height="95" rx="12"/>
+    <text class="label" x="965" y="740" text-anchor="middle">GitHub Actions</text>
+    <text class="detail" x="965" y="761" text-anchor="middle">Validate exact registered model + checksums</text>
+    <text class="detail" x="965" y="778" text-anchor="middle">Build inference package • Deploy to Modal</text>
+
+    <path class="flow" d="M510 758 H575"/>
+    <path class="flow" d="M760 758 H825"/>
+    <text class="flow-label" x="532" y="745">register</text>
+    <text class="flow-label" x="775" y="745">promote</text>
+
+    <!-- Monitoring -->
+    <rect class="zone" x="20" y="640" width="220" height="210" rx="14"/>
+    <text class="title" x="130" y="670" text-anchor="middle">Source Data</text>
+    <rect class="node external" x="50" y="710" width="160" height="95" rx="12"/>
+    <text class="label" x="130" y="742" text-anchor="middle">Churn dataset</text>
+    <text class="detail" x="130" y="763" text-anchor="middle">Training and validation data</text>
+    <text class="detail" x="130" y="780" text-anchor="middle">Versioned source snapshot</text>
+
+    <rect class="zone" x="1230" y="555" width="220" height="295" rx="14"/>
+    <text class="title" x="1340" y="585" text-anchor="middle">Scheduled Monitoring</text>
+    <rect class="node monitor" x="1260" y="620" width="160" height="55" rx="10"/>
+    <text class="label" x="1340" y="643" text-anchor="middle">Drift worker</text>
+    <text class="detail" x="1340" y="660" text-anchor="middle">Every 6 hours • Evidently</text>
+    <rect class="node monitor" x="1260" y="695" width="160" height="55" rx="10"/>
+    <text class="label" x="1340" y="718" text-anchor="middle">Label worker</text>
+    <text class="detail" x="1340" y="735" text-anchor="middle">Daily • Exact outcomes</text>
+    <rect class="node monitor" x="1260" y="770" width="160" height="55" rx="10"/>
+    <text class="label" x="1340" y="793" text-anchor="middle">Performance worker</text>
+    <text class="detail" x="1340" y="810" text-anchor="middle">Weekly • Model metrics</text>
+
+    <!-- Main flows -->
+    <path class="flow" d="M154 370 H330"/>
+    <text class="flow-label" x="205" y="356">HTTPS</text>
+    <path class="flow" d="M710 365 H790 V252 H915"/>
+    <text class="flow-label" x="765" y="238">prediction + outcome events</text>
+    <path class="flow" d="M1260 355 H1185 V365 H710"/>
+    <text class="flow-label" x="1040" y="350">authenticated outcomes</text>
+    <path class="flow" d="M130 710 V675 H325"/>
+    <path class="flow" d="M965 710 V605 H520 V570"/>
+    <text class="flow-label" x="790" y="595">deploy pinned model and application</text>
+    <path class="async" d="M1115 252 H1190 V647 H1260"/>
+    <path class="async" d="M1260 798 H1188 V440 H1115"/>
+    <text class="flow-label" x="1168" y="600" transform="rotate(-90 1168 600)">scheduled reads and immutable writes</text>
+
+    <!-- Legend -->
+    <path class="flow" d="M415 895 H500"/>
+    <text class="detail" x="510" y="899">Synchronous flow</text>
+    <path class="async" d="M650 895 H735"/>
+    <text class="detail" x="745" y="899">Scheduled / asynchronous flow</text>
+  </svg>
