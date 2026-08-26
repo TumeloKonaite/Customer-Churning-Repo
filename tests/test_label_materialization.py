@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
+from src.config import (
+    Environment,
+    LabelMaterializationSettings,
+    OutcomeMonitoringSettings,
+)
 from src.monitoring.performance.labels import (
     LabelStatus,
     LabelingPrediction,
@@ -16,6 +23,27 @@ from src.monitoring.outcomes import CanonicalOutcome, OutcomeOperation, outcome_
 UTC = timezone.utc
 PREDICTED = datetime(2026, 1, 1, tzinfo=UTC)
 HORIZON = PREDICTED + timedelta(days=90)
+
+
+def test_label_settings_do_not_require_performance_deployment_ids(monkeypatch):
+    monkeypatch.delenv("MONITORING_DEPLOYMENT_IDS", raising=False)
+
+    settings = LabelMaterializationSettings(
+        environment=Environment.PRODUCTION,
+        label_contract_approved=True,
+    )
+
+    assert settings.required_sources == ("customer-master",)
+
+
+def test_performance_settings_still_require_deployment_ids(monkeypatch):
+    monkeypatch.delenv("MONITORING_DEPLOYMENT_IDS", raising=False)
+
+    with pytest.raises(ValueError, match="MONITORING_DEPLOYMENT_IDS"):
+        OutcomeMonitoringSettings(
+            environment=Environment.DEVELOPMENT,
+            model_version_id="model:1",
+        )
 
 
 def prediction():
