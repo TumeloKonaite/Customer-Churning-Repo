@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "classification": "approved_non_sensitive_model_features",
+  "prohibited_columns": [
+    "CustomerId", "Surname", "RowNumber", "email", "phone", "telephone", "address"
+  ],
+  "case_insensitive": true,
+  "unkeyed_identifier_hashes_allowed": false
+}

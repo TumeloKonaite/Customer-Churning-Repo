@@ -1,328 +1,127 @@
-# Customer Churn Prediction Web App
+# Customer Churn Prediction Platform
 
-[![CI](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml/badge.svg)](https://github.com/TumeloKonaite/Customer-Churning-Repo/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Development Status](https://img.shields.io/badge/Status-Active-success.svg)](#development-status)
-[![Git Workflow](https://img.shields.io/badge/GitHub-Flow-blue.svg)](https://docs.github.com/en/get-started/quickstart/github-flow)
-[![Docker Ready](https://img.shields.io/badge/Docker-Ready-blue.svg)](#docker-quick-start)
+An end-to-end machine learning project that predicts whether a bank customer is likely to churn. It demonstrates the complete path from model training and versioning to a deployed API, React frontend, and production monitoring.
 
-**Live Demo:** http://customer-churn-alb-1775269208.us-east-1.elb.amazonaws.com
+## Architecture
 
-## Overview
-This Flask web application predicts customer churn using a scikit-learn model. Users enter customer attributes via a simple UI, and the app returns whether the customer is likely to churn along with guidance for retention actions.
+![Customer churn platform high-level architecture](customer-churn-hld.svg)
 
-Training is notebook-independent via a pipeline and a CLI-style entrypoint. It saves model artifacts and metadata (including evaluation metrics and feature schema) under `artifacts/`. Real artifacts are generated via training or CI builds; the repo only keeps small example files for documentation.
+The system has two main paths:
 
-## Features
-- User-friendly input form for customer data
-- Real-time churn prediction
-- Actionable output (high risk vs. low risk)
-- Preprocessing + model bundled into a single pipeline artifact
-- Docker support for easy deployment (exposes port 5001)
+1. The offline pipeline trains and evaluates models, tracks experiments in DagsHub MLflow, and packages an exact model version for deployment.
+2. The online platform serves predictions through FastAPI on Modal, stores events in Neon PostgreSQL, and runs scheduled drift and performance checks with Evidently.
 
-## Retention Decisioning (ROI Layer)
-The app includes a lightweight, deterministic decision engine that turns churn probability into a recommended retention action and a simple ROI proxy. It estimates CLV using a balance and tenure-based heuristic, assigns actions using fixed probability thresholds, and computes expected net gain as:
+## What this project demonstrates
 
-```
-net_gain = (p_churn * clv) - action_cost
-```
+- End-to-end ML training with reusable preprocessing and model pipelines
+- Experiment tracking, model lineage, and registry workflows with MLflow
+- Reproducible deployment using exact model versions and checksum validation
+- Single-customer and JSON batch predictions through a typed FastAPI API
+- A responsive React interface for interacting with the model
+- Persistent prediction, outcome, and monitoring records in PostgreSQL
+- Scheduled data-drift and delayed model-performance monitoring
+- Privacy-aware telemetry that excludes direct customer identifiers
 
-All assumptions and thresholds are documented in `src/decisioning.py`.
+## Tech stack
 
-### ROI Example Table
-The table below uses the same formulas and action costs defined in `src/decisioning.py`.
+| Area | Technology |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, Tailwind CSS |
+| API | FastAPI, Pydantic |
+| Machine learning | scikit-learn, pandas, NumPy |
+| Experiment tracking | DagsHub MLflow |
+| Database | Neon PostgreSQL, Alembic |
+| Monitoring | Evidently, immutable JSON/HTML reports |
+| Deployment | Modal, Vercel, GitHub Actions |
+| Tooling | uv, pytest, Vitest |
 
-| Scenario | p_churn | Balance | Tenure | EstimatedSalary | CLV (proxy) | Action | Action Cost | Expected Net Gain |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| Low risk | 0.20 | 10,000 | 5 | 50,000 | 13,000 | No action | 0 | 2,600 |
-| Medium risk | 0.45 | 2,500 | 2 | 60,000 | 5,300 | Retention email | 5 | 2,380 |
-| High risk | 0.75 | 15,000 | 8 | 80,000 | 19,000 | Discount or retention call | 50 | 14,200 |
+## How predictions work
 
-## Live Demo
-![Live demo screenshot](docs/demo-ecs.png)
+1. A user submits customer data from the React app or directly to the API.
+2. FastAPI validates the request against the model's input contract.
+3. The packaged preprocessing pipeline transforms the data and predicts churn probability.
+4. The API returns the prediction and records a privacy-safe monitoring event.
+5. Scheduled jobs compare production traffic with an approved reference baseline.
 
-This demo shows the full flow:
-- user enters customer attributes
-- submits the form
-- receives a churn prediction with confidence score and guidance
+### Main API endpoints
 
-## Quickstart
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Check service and model readiness |
+| `POST` | `/api/predict` | Predict churn for one customer |
+| `POST` | `/api/predict/batch` | Predict churn for a JSON batch |
 
-### 1. Set up a virtual environment
-Choose **one** option:
+Outcome-ingestion endpoints are protected and are used by trusted monitoring workflows rather than the public frontend.
 
-**Option A: using uv (recommended)**
+## Run locally
+
+### Prerequisites
+
+- Python 3.12
+- Node.js 20+
+- [uv](https://docs.astral.sh/uv/)
+
+### Backend
+
 ```bash
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync --locked
+cp .env.example .env
+uv run uvicorn application:app --reload --port 5001
 ```
 
-**Option B: using Python venv**
+The API documentation is available at `http://localhost:5001/docs`.
+
+### Frontend
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+cd frontend
+npm install
+cp .env.example .env.local
+npm run dev
 ```
 
-### 2. Run common workflows
+The frontend is available at `http://localhost:5173`.
+
+### Train a model
+
 ```bash
-make train   # train model and save to artifacts/
-make run     # start the web app locally
-make test    # run tests
-make reqs    # regenerate requirements.txt from pyproject.toml
+uv run python -m src.train train --config configs/training.yaml
 ```
 
-Canonical app entrypoint: `application.py` (with `main.py` as a thin shim).
+Local training works without a tracking server. Add the DagsHub MLflow variables from `.env.example` to enable remote experiment tracking and model registration.
 
-**Windows PowerShell (no make installed)**
-```powershell
-python -m src.train
-python application.py
-python -m pytest
-```
+## Test the project
 
-### 3. Open the app
-Visit: http://localhost:5001
-
-## Model Training
-- Entrypoint: `src/train.py` (runs the pipeline and writes `artifacts/metadata.json`)
-- Pipeline: `src/pipeline/training_pipeline.py`
-- Output artifacts:
-  - `artifacts/model.pkl`
-  - `artifacts/metadata.json`
-  - `artifacts/schema.json`
-  - `artifacts/feature_columns.json`
-  
-**Note:** Large binary artifacts are not committed. Example files for docs live in:
-- `artifacts/sample_metadata.json`
-- `artifacts/schema.example.json`
-
-## Model Performance
-Metrics below are pulled from the latest `artifacts/metadata.json` run.
-
-| Metric | Value |
-| --- | ---: |
-| ROC-AUC | 0.8697 |
-| F1 | 0.6070 |
-| Precision | 0.7937 |
-| Recall | 0.4914 |
-
-Dataset split: 80/20 train/test (stratified on `Exited`).
-
-## Dependencies
-`pyproject.toml` is the source of truth for dependencies (with `uv.lock` for locking).
-`requirements.txt` is generated for deployment and can be regenerated via `make reqs`.
-
-## Docker Quick Start
-
-### Using Docker Compose (Recommended)
 ```bash
-docker-compose up --build
+uv run pytest -q
+cd frontend
+npm test
+npm run build
 ```
 
-### Using Docker Directly
-```bash
-# Build the image
-docker build -t churn-predictor .
+## Repository map
 
-# Optional: pre-train during build to avoid startup delays
-# docker build --build-arg RUN_TRAINING=1 -t churn-predictor .
-
-# Run the container
-docker run -p 5001:5001 churn-predictor
+```text
+frontend/            React prediction workspace
+src/api/             FastAPI routes and request contracts
+src/components/      Data ingestion, validation, training, and evaluation
+src/pipeline/        Training and inference orchestration
+src/mlops/           Model registry and deployment packaging
+src/database/        Persistence layer and repositories
+src/monitoring/      Drift, labels, and performance workflows
+configs/             Versioned training and monitoring configuration
+migrations/          PostgreSQL schema migrations
+tests/               Backend test suite
 ```
 
-Visit http://localhost:5001 to access the application.
+## Further documentation
 
-### Smoke Test
-```bash
-# macOS / Linux
-BASE_URL=http://localhost:5001 make smoke
-```
-
-```powershell
-# Windows PowerShell
-$env:BASE_URL="http://localhost:5001"
-make smoke
-```
-
-## API Contract
-
-### Health Check
-`GET /health`
-
-**200 OK**
-```json
-{
-  "status": "healthy",
-  "timestamp": "2026-02-01T12:34:56.789012",
-  "model_loaded": true,
-  "metadata": {
-    "training_date": "2026-02-01T09:15:00",
-    "model_name": "churn_predictor",
-    "version": "1.0.0"
-  }
-}
-```
-
-### Predict
-`POST /api/predict` (Content-Type: application/json)
-
-**Request body**
-```json
-{
-  "CreditScore": 650,
-  "Geography": "France",
-  "Gender": "Male",
-  "Age": 40,
-  "Tenure": 3,
-  "Balance": 60000,
-  "NumOfProducts": 2,
-  "HasCrCard": 1,
-  "IsActiveMember": 1,
-  "EstimatedSalary": 50000
-}
-```
-
-**200 OK**
-```json
-{
-  "status": "success",
-  "p_churn": 0.42,
-  "predicted_label": 1,
-  "clv": 67500.0,
-  "recommended_action": "Retention email",
-  "net_gain": 28345.0,
-  "model_name": "churn_predictor",
-  "model_version": "1.0.0",
-  "timestamp": "2026-02-01T12:34:56.789012"
-}
-```
-
-**Errors**
-- `400 Bad Request`: missing or invalid fields (see `errors` array)
-- `415 Unsupported Media Type`: Content-Type is not `application/json`
-- `503 Service Unavailable`: model artifacts not ready
-
-### Curl Example
-```bash
-curl -X POST http://localhost:5001/api/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "CreditScore": 650,
-    "Geography": "France",
-    "Gender": "Male",
-    "Age": 40,
-    "Tenure": 3,
-    "Balance": 60000,
-    "NumOfProducts": 2,
-    "HasCrCard": 1,
-    "IsActiveMember": 1,
-    "EstimatedSalary": 50000
-  }'
-```
-
-## Deployment (AWS ECS Fargate)
-The demo deploys the container to **ECS Fargate** behind an **Application Load Balancer (ALB)**.
-
-![Architecture diagram](docs/architecture.png)
-
-- Container images are pushed to **ECR**
-- **ECS** runs the container in a managed Fargate service
-- **ALB** routes traffic and performs health checks on `/health`
-- Logs stream to **CloudWatch Logs**
-- Model artifacts are baked into the image during CI (`RUN_TRAINING=1`) so ECS starts deterministically
-
-CI/CD is handled by GitHub Actions: on push to `main`, the workflow builds the image,
-pushes to ECR, and forces a new ECS deployment.
-Terraform files live in `infra/`.
-
-### Artifacts + Auto-Training
-The app requires model artifacts under `artifacts/` (`schema.json`, `preprocessor.pkl`, `encoder.pkl`, etc.).
-If these files are missing, the container will auto-train on startup by default.
-
-- Control this behavior with `AUTO_TRAIN`:
-  - `AUTO_TRAIN=1` (default): train if artifacts are missing
-  - `AUTO_TRAIN=0`: skip training (prediction will fail if artifacts are absent)
-
-By default, training runs in the background so the server can start quickly. You can
-control this with `AUTO_TRAIN_ASYNC`:
-- `AUTO_TRAIN_ASYNC=1` (default): train in background
-- `AUTO_TRAIN_ASYNC=0`: train synchronously before app starts
-
-You can also pre-train at build time with `RUN_TRAINING=1` (default in compose).
-If a volume is mounted, the container will restore artifacts from an internal
-image cache on first start to avoid re-training.
-
-For compatibility with some external smoke tests, the container can also
-forward port 5000 to the app port via `ENABLE_PORT_5000=1` (default).
-Docker Compose uses a named volume `artifacts` so trained files persist across restarts.
-
-## Project Structure
-```
-Customer-Churning-Repo/
-+- .github/
-�  +- workflows/
-�     +- ci.yml
-+- application.py
-+- artifacts/
-+- dataset/
-�  +- Churn_Modelling.csv
-+- docs/
-�  +- demo-placeholder.svg
-+- logs/
-+- notebooks/
-�  +- Churning problem using multiple Classification Models.ipynb
-+- src/
-�  +- components/
-�  +- metrics.py
-�  +- pipeline/
-�  +- decisioning.py
-�  +- train.py
-�  +- utils.py
-+- templates/
-+- tests/
-�  +- test_decisioning.py
-�  +- test_metrics.py
-�  +- test_training_metadata.py
-+- pyproject.toml
-+- requirements.txt
-+- Makefile
-+- README.md
-```
-
-## Development Status
-Active
-
-## Model Card
-### Model Details
-- Model type: scikit-learn binary classifier in a preprocessing pipeline
-- Task: predict customer churn (1 = churn, 0 = stay)
-- Output: class label plus churn probability
-
-### Intended Use
-- Support retention workflows by flagging high-risk customers
-- Provide a lightweight ROI proxy via the decisioning layer
-
-### Data
-- Training data: `dataset/Churn_Modelling.csv`
-- Features: numeric and categorical customer attributes used in the UI and API
-
-### Metrics
-- Metrics are stored in `artifacts/metadata.json` after training
-- Evaluation utilities in `src/metrics.py`
-
-### Limitations
-- The ROI layer is a heuristic, not a causal estimate
-- Model performance can drift as customer behavior changes
-- Not intended for automated adverse decisions without review
-
-## Contributing
-1. Create a feature branch
-2. Commit changes
-3. Open a pull request
+- [Frontend setup and deployment](frontend/README.md)
+- [Monitoring overview](docs/monitoring/README.md)
+- [Data-quality and drift jobs](docs/monitoring/data-quality-drift-jobs-v1.md)
+- [Outcome labels and performance](docs/monitoring/outcomes-labels-performance-v1.md)
+- [Production monitoring contract](docs/monitoring/production-monitoring-contract-v1.md)
 
 ## License
-MIT � see `LICENSE`.
+
+This project is available under the [MIT License](LICENSE).

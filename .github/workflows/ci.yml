@@ -1,7 +1,6 @@
 name: CI
 
 on:
-  push:
   pull_request:
 
 jobs:
@@ -21,44 +20,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run unit tests
-        run: |
-          pytest -v --ignore=tests/test_docker.py
-
-      - name: Docker build
-        run: docker build --build-arg RUN_TRAINING=1 -t churn-predictor:latest .
-
-      - name: Docker smoke test
-        run: |
-          # Start container
-          docker run -d --name churn -p 5000:5000 -e AUTO_TRAIN=0 churn-predictor:latest
-
-          # Wait for container to be ready with better error handling
-          echo "Waiting for service to be ready..."
-          ATTEMPTS=0
-          MAX_ATTEMPTS=30
-          HEALTH_CHECK_URL="http://localhost:5000/health"
-          
-          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
-            if curl -s "$HEALTH_CHECK_URL" > /dev/null; then
-              echo "Service is ready!"
-              break
-            fi
-            ATTEMPTS=$((ATTEMPTS + 1))
-            echo "Attempt $ATTEMPTS/$MAX_ATTEMPTS - Service not ready yet..."
-            sleep 1
-          done
-
-          if [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; then
-            echo "Service failed to become ready in time"
-            docker logs churn
-            exit 1
-          fi
-
-          # Smoke test using Makefile target
-          BASE_URL="http://localhost:5000" make smoke
-
-      - name: Cleanup Docker container
-        if: always()
-        run: |
-          docker stop churn || true
-          docker rm churn || true
+        run: pytest -v

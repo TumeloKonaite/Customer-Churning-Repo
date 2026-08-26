@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "positive_class": 1,
+  "classification_threshold": 0.5,
+  "outputs": ["predicted_label", "p_churn"],
+  "prediction_horizon_version": "90-days-v1"
+}
