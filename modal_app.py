@@ -139,12 +139,12 @@ def _execute_label_materialization(as_of: str | None = None):
     """Build label-only dependencies inside the scheduled worker."""
     from datetime import datetime, timedelta, timezone
 
-    from src.config import DatabaseSettings, OutcomeMonitoringSettings
+    from src.config import DatabaseSettings, LabelMaterializationSettings
     from src.database import create_database_engine
     from src.monitoring.performance.repository import LabelRepository
     from src.monitoring.performance.labels import LabelMaterializationJob
 
-    settings = OutcomeMonitoringSettings()
+    settings = LabelMaterializationSettings()
     engine = create_database_engine(DatabaseSettings())
     try:
         if as_of:

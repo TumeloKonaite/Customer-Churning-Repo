@@ -49,6 +49,11 @@ Production label and performance workers additionally require
 production monitoring contract is complete; the repository's current proposed
 contract remains fail-closed until then.
 
+The weekly performance worker also requires `MONITORING_DEPLOYMENT_IDS`, a
+comma-separated allow-list of the `deployment_id` values recorded in each
+deployed package's `build/model/deployment_metadata.json`. Label materialization
+does not depend on this performance-only allow-list.
+
 ## Performance reports
 
 The weekly Modal `scheduled_performance_monitoring` job first materializes labels,
