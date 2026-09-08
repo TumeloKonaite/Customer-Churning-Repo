@@ -67,6 +67,7 @@ class SinglePredictionResponse(BaseModel):
     status: Literal["success"]
     predicted_label: int
     p_churn: float | None = Field(description="Churn probability, or null when unavailable")
+    prediction_id: str | None = None
     model_name: str
     model_version: str | None = None
     deployment_id: str | None = None

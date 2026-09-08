@@ -57,12 +57,16 @@ def persist_prediction_events(
     probabilities: Sequence[float | None],
     prediction_timestamp: datetime,
     metadata: dict[str, Any],
+    request_source: str = "single",
+    batch_id: str | None = None,
 ) -> tuple[str, ...]:
     """Persist scored rows atomically, omitting all caller identifiers."""
     if not (len(feature_rows) == len(labels) == len(probabilities)):
         raise PredictionPersistenceError("Prediction persistence inputs are misaligned")
     if not feature_rows:
         return ()
+    if request_source not in {"single", "batch"}:
+        raise PredictionPersistenceError("Request source must be single or batch")
 
     try:
         settings, repository = _runtime()
@@ -76,7 +80,9 @@ def persist_prediction_events(
             "prediction_persistence_skipped environment=%s reason=database_not_configured",
             settings.environment.value,
         )
-        return ()
+        # Development can run without Neon, but successful API responses still
+        # carry opaque correlation IDs. Production requires DATABASE_URL.
+        return tuple(str(uuid4()) for _ in feature_rows)
 
     if prediction_timestamp.tzinfo is None or prediction_timestamp.utcoffset() is None:
         raise PredictionPersistenceError("Prediction timestamp must include a UTC offset")
@@ -124,6 +130,8 @@ def persist_prediction_events(
                 prediction_probability=probability_value,
                 predicted_class=str(label_value),
                 deployment_id=deployment_id,
+                request_source=request_source,
+                batch_id=batch_id,
             )
         )
 

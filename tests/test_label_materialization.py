@@ -7,9 +7,8 @@ import pytest
 from src.config import (
     Environment,
     LabelMaterializationSettings,
-    OutcomeMonitoringSettings,
 )
-from src.monitoring.performance.labels import (
+from src.monitoring.labels.job import (
     LabelStatus,
     LabelingPrediction,
     OutcomeSnapshot,
@@ -34,16 +33,6 @@ def test_label_settings_do_not_require_performance_deployment_ids(monkeypatch):
     )
 
     assert settings.required_sources == ("customer-master",)
-
-
-def test_performance_settings_still_require_deployment_ids(monkeypatch):
-    monkeypatch.delenv("MONITORING_DEPLOYMENT_IDS", raising=False)
-
-    with pytest.raises(ValueError, match="MONITORING_DEPLOYMENT_IDS"):
-        OutcomeMonitoringSettings(
-            environment=Environment.DEVELOPMENT,
-            model_version_id="model:1",
-        )
 
 
 def prediction():

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import logging
 from typing import Any
+from uuid import uuid4
 
 import pandas as pd
 
@@ -162,7 +163,8 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
                 for valid_index, features in enumerate(validation["valid_rows"])
             }
             result_rows = result["results"]
-            prediction_event_service.persist_prediction_events(
+            batch_id = str(uuid4())
+            prediction_ids = prediction_event_service.persist_prediction_events(
                 feature_rows=[
                     features_by_source_index[item["index"]] for item in result_rows
                 ],
@@ -170,7 +172,12 @@ def predict_batch(records: list, options: dict) -> dict[str, Any]:
                 probabilities=[item["p_churn"] for item in result_rows],
                 prediction_timestamp=datetime.fromisoformat(result["timestamp"]),
                 metadata=model_service.load_metadata(),
+                request_source="batch",
+                batch_id=batch_id,
             )
+            for item, prediction_id in zip(result_rows, prediction_ids):
+                item["prediction_id"] = prediction_id
+                item["batch_id"] = batch_id
         operational = model_service.operational_metadata()
         logger.info(
             "batch_prediction_completed deployment_id=%s model_version=%s "

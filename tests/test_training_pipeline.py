@@ -7,7 +7,8 @@ from src.pipeline.training_pipeline import TrainingPipeline
 def test_training_pipeline_uses_existing_components_in_order():
     calls = []
     cohorts = object()
-    fitted_training = SimpleNamespace(artifact_dir="artifacts/training")
+    fitted_training = object()
+    published_training = SimpleNamespace(artifact_dir="artifacts/training")
     tracking = TrackingResult(
         status="registered",
         artifact_dir="artifacts/training",
@@ -25,15 +26,13 @@ def test_training_pipeline_uses_existing_components_in_order():
             return cohorts
 
     class Trainer:
-        def train(
+        def fit(
             self,
             received,
             model,
             eligibility,
             *,
             random_seed,
-            output_dir,
-            training_config,
         ):
             calls.append("trainer")
             assert received is cohorts
@@ -44,20 +43,30 @@ def test_training_pipeline_uses_existing_components_in_order():
                 "gradient_boosting",
             }
             assert random_seed == 42
-            assert output_dir == "artifacts/training"
-            assert training_config["version"] == "1.0.0"
             return fitted_training
+
+    class ArtifactWriter:
+        def write(self, received, *, cohorts, config, output_dir):
+            calls.append("artifacts")
+            assert received is fitted_training
+            assert cohorts is not None
+            assert config["version"] == "1.0.0"
+            assert output_dir == "artifacts/training"
+            return published_training
 
     class Tracker:
         def track(self, received_training, config):
             calls.append("tracker")
-            assert received_training is fitted_training
+            assert received_training is published_training
             assert config["version"] == "1.0.0"
             return tracking
 
     result = TrainingPipeline(
-        ingestion=Ingestion(), trainer=Trainer(), tracker=Tracker()
+        ingestion=Ingestion(),
+        trainer=Trainer(),
+        artifact_writer=ArtifactWriter(),
+        tracker=Tracker(),
     ).run("configs/training.yaml")
 
     assert result is tracking
-    assert calls == ["ingestion", "trainer", "tracker"]
+    assert calls == ["ingestion", "trainer", "artifacts", "tracker"]

@@ -236,41 +236,6 @@ class LabelMaterializationSettings(_Settings):
         return self
 
 
-class OutcomeMonitoringSettings(LabelMaterializationSettings):
-    """Additional inputs required by performance monitoring workers."""
-
-    model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
-    deployment_ids_csv: str = Field(alias="MONITORING_DEPLOYMENT_IDS")
-    policy_version: str = Field(default="1.0.0", alias="MONITORING_POLICY_VERSION")
-    performance_cohort_days: int = Field(
-        default=30, ge=1, alias="PERFORMANCE_COHORT_DAYS"
-    )
-    classification_threshold: float = Field(
-        default=0.5, ge=0, le=1, alias="DEPLOYED_CLASSIFICATION_THRESHOLD"
-    )
-    minimum_privacy_size: int = Field(
-        default=20, ge=2, alias="MONITORING_MINIMUM_PRIVACY_SIZE"
-    )
-
-    @property
-    def deployment_ids(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                value.strip()
-                for value in self.deployment_ids_csv.split(",")
-                if value.strip()
-            )
-        )
-
-    @model_validator(mode="after")
-    def complete_identity(self) -> "OutcomeMonitoringSettings":
-        if not self.deployment_ids:
-            raise ValueError("MONITORING_DEPLOYMENT_IDS must not be empty")
-        if self.environment is Environment.PRODUCTION and self.minimum_privacy_size < 20:
-            raise ValueError("production minimum privacy size must be at least 20")
-        return self
-
-
 def redact_secret(value: str) -> str:
     """Return a safe marker instead of attempting partial credential disclosure."""
     return "<redacted>" if value else ""

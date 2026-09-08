@@ -19,11 +19,11 @@ import numpy as np
 import pandas as pd
 import sklearn
 
-from src.components.model_trainer import ModelTrainingResult
 from src.config import DagsHubSettings, safe_error_message
 from src.logger import logging
 from src.model_schema import CANONICAL_FEATURE_ORDER
 from src.schemas.prediction import SINGLE_PREDICTION_EXAMPLE
+from src.training.models import ModelTrainingResult
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

@@ -42,12 +42,13 @@ def predict_single(payload: Any) -> dict[str, Any]:
         prediction_timestamp = datetime.now(timezone.utc)
         metadata = model_service.prediction_metadata()
         operational = model_service.operational_metadata()
-        prediction_event_service.persist_prediction_events(
+        prediction_ids = prediction_event_service.persist_prediction_events(
             feature_rows=[request.model_dump(mode="json")],
             labels=[label],
             probabilities=[probability],
             prediction_timestamp=prediction_timestamp,
             metadata=model_service.load_metadata(),
+            request_source="single",
         )
         logger.info(
             "prediction_completed deployment_id=%s model_version=%s mlflow_run_id=%s "
@@ -74,6 +75,7 @@ def predict_single(payload: Any) -> dict[str, Any]:
         "status": "success",
         "predicted_label": label,
         "p_churn": probability,
+        "prediction_id": prediction_ids[0] if prediction_ids else None,
         **metadata,
         "timestamp": prediction_timestamp.isoformat(),
     }

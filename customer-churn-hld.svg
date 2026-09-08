@@ -113,16 +113,16 @@
     <text class="detail" x="130" y="780" text-anchor="middle">Versioned source snapshot</text>
 
     <rect class="zone" x="1230" y="555" width="220" height="295" rx="14"/>
-    <text class="title" x="1340" y="585" text-anchor="middle">Scheduled Monitoring</text>
+    <text class="title" x="1340" y="585" text-anchor="middle">Arize Monitoring</text>
     <rect class="node monitor" x="1260" y="620" width="160" height="55" rx="10"/>
-    <text class="label" x="1340" y="643" text-anchor="middle">Drift worker</text>
-    <text class="detail" x="1340" y="660" text-anchor="middle">Every 6 hours • Evidently</text>
+    <text class="label" x="1340" y="643" text-anchor="middle">Export worker</text>
+    <text class="detail" x="1340" y="660" text-anchor="middle">Hourly • Arize AX</text>
     <rect class="node monitor" x="1260" y="695" width="160" height="55" rx="10"/>
     <text class="label" x="1340" y="718" text-anchor="middle">Label worker</text>
     <text class="detail" x="1340" y="735" text-anchor="middle">Daily • Exact outcomes</text>
     <rect class="node monitor" x="1260" y="770" width="160" height="55" rx="10"/>
-    <text class="label" x="1340" y="793" text-anchor="middle">Performance worker</text>
-    <text class="detail" x="1340" y="810" text-anchor="middle">Weekly • Model metrics</text>
+    <text class="label" x="1340" y="793" text-anchor="middle">Arize AX Cloud</text>
+    <text class="detail" x="1340" y="810" text-anchor="middle">Drift • Quality • Performance</text>
 
     <!-- Main flows -->
     <path class="flow" d="M154 370 H330"/>

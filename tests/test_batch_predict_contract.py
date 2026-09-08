@@ -54,7 +54,9 @@ def patch_batch_execution(monkeypatch, *, labels, probabilities):
 def assert_prediction_only_envelope(body):
     assert set(body) == {"status", "results", "errors", "summary", "metadata", "timestamp"}
     for result in body["results"]:
-        assert set(result) == {"index", "id", "predicted_label", "p_churn"}
+        assert set(result) == {
+            "index", "id", "predicted_label", "p_churn", "prediction_id", "batch_id"
+        }
 
 
 def test_batch_contract_requires_records():

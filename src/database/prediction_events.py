@@ -27,6 +27,8 @@ class PendingPredictionEvent:
     prediction_probability: float
     predicted_class: str
     deployment_id: str | None
+    request_source: str = "single"
+    batch_id: str | None = None
 
 
 class PredictionEventRepository:
@@ -45,12 +47,12 @@ class PredictionEventRepository:
                 prediction_id, environment, model_version_id,
                 prediction_timestamp, feature_schema_version, features,
                 prediction_probability, predicted_class, deployment_id,
-                monitoring_eligible
+                monitoring_eligible, request_source, batch_id
             ) VALUES (
                 :prediction_id, :environment, :model_version_id,
                 :prediction_timestamp, :feature_schema_version,
                 CAST(:features AS jsonb), :prediction_probability,
-                :predicted_class, :deployment_id, FALSE
+                :predicted_class, :deployment_id, FALSE, :request_source, :batch_id
             )
             """
         )
@@ -70,9 +72,22 @@ class PredictionEventRepository:
                 "prediction_probability": event.prediction_probability,
                 "predicted_class": event.predicted_class,
                 "deployment_id": event.deployment_id,
+                "request_source": event.request_source,
+                "batch_id": event.batch_id,
             }
             for event in pending
         ]
         with self.engine.begin() as connection:
             connection.execute(statement, parameters)
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO arize_export_events (
+                        prediction_id, event_type, status, next_attempt_at
+                    ) VALUES (:prediction_id, 'prediction', 'pending', clock_timestamp())
+                    ON CONFLICT DO NOTHING
+                    """
+                ),
+                [{"prediction_id": event.prediction_id} for event in pending],
+            )
         return len(pending)

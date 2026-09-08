@@ -1,59 +1,18 @@
-"""Modal deployment entrypoint for the customer churn FastAPI application."""
-
-from pathlib import Path
+"""Modal deployment manifest for the customer churn application."""
 
 import modal
 
+from deployment.modal_resources import build_modal_images
 
-PROJECT_ROOT = Path(__file__).resolve().parent
 APP_NAME = "customer-churn-backend"
 app = modal.App(APP_NAME)
-
-# The verified package is produced locally before deploy and copied with the app.
-image = (
-    modal.Image.debian_slim(python_version="3.12")
-    .pip_install_from_requirements(str(PROJECT_ROOT / "requirements.txt"))
-    .add_local_dir(
-        str(PROJECT_ROOT),
-        remote_path="/app",
-        copy=True,
-        ignore=[
-            ".git",
-            ".git/**",
-            ".github",
-            ".github/**",
-            ".venv",
-            ".venv/**",
-            ".env",
-            ".env.*",
-            ".modal.toml",
-            "**/__pycache__",
-            "**/__pycache__/**",
-            ".pytest_cache",
-            ".pytest_cache/**",
-            ".mypy_cache",
-            ".mypy_cache/**",
-            ".ruff_cache",
-            ".ruff_cache/**",
-            "tests",
-            "tests/**",
-            "notebooks",
-            "notebooks/**",
-            "dataset",
-            "dataset/**",
-            "logs",
-            "logs/**",
-            "artifacts",
-            "artifacts/**",
-            "*.log",
-        ],
-    )
-    .workdir("/app")
-)
-
+image, arize_export_image = build_modal_images()
 runtime_secrets = [modal.Secret.from_name("customer-churn-production")]
+arize_secret = modal.Secret.from_name("customer-churn-arize")
 
 
+# Public HTTP entrypoint. Modal runs the FastAPI ASGI application in the main
+# image and allows each warm container to handle up to ten concurrent requests.
 @app.function(
     image=image,
     secrets=runtime_secrets,
@@ -65,43 +24,9 @@ runtime_secrets = [modal.Secret.from_name("customer-churn-production")]
 @modal.asgi_app()
 def fastapi_app():
     """Return the FastAPI ASGI application for Modal to serve."""
-    from src.config import DatabaseSettings
-    from src.database import check_connectivity
-    from src.mlops.deployment import validate_production_startup
+    from src.workers.api import create_production_api
 
-    # These checks run once while the container starts. They never contact DagsHub.
-    validate_production_startup("/app/build/model")
-    check_connectivity(DatabaseSettings())
-    from application import app as fastapi_application
-
-    return fastapi_application
-
-
-def _execute_monitoring(scheduled_for: str | None = None):
-    """Build monitoring-only dependencies inside a non-request Modal container."""
-    from datetime import datetime
-
-    from src.config import DatabaseSettings, MonitoringSettings
-    from src.database import create_database_engine
-    from src.monitoring.__main__ import _store
-    from src.monitoring.drift.service import MonitoringJob
-    from src.monitoring.drift.repository import MonitoringRepository
-
-    settings = MonitoringSettings()
-    engine = create_database_engine(DatabaseSettings())
-    try:
-        as_of = (
-            datetime.fromisoformat(scheduled_for.replace("Z", "+00:00"))
-            if scheduled_for
-            else None
-        )
-        return MonitoringJob(MonitoringRepository(engine), _store(settings)).run(
-            environment=settings.environment.value,
-            model_version_id=settings.model_version_id,
-            scheduled_for=as_of,
-        )
-    finally:
-        engine.dispose()
+    return create_production_api()
 
 
 monitoring_retries = modal.Retries(
@@ -112,63 +37,45 @@ monitoring_retries = modal.Retries(
 )
 
 
-@app.function(
-    image=image,
-    secrets=runtime_secrets,
-    schedule=modal.Cron("15 */6 * * *", timezone="UTC"),
-    retries=monitoring_retries,
-    timeout=1800,
-)
-def scheduled_monitoring():
-    """Run on the policy-v1 cadence, outside all FastAPI request handling."""
-    return _execute_monitoring()
+def _execute_arize_export():
+    from src.workers.arize_export import execute_arize_export
+
+    return execute_arize_export()
 
 
+# Scheduled background function. Modal invokes it five minutes after every hour
+# to deliver one bounded batch from the transactional outbox to Arize.
 @app.function(
-    image=image,
-    secrets=runtime_secrets,
+    image=arize_export_image,
+    secrets=[*runtime_secrets, arize_secret],
+    schedule=modal.Cron("5 * * * *", timezone="UTC"),
     retries=monitoring_retries,
-    timeout=1800,
+    timeout=900,
 )
-def run_monitoring(scheduled_for: str | None = None):
-    """Manual operations/debug entrypoint; scheduled_for is an optional ISO-8601 time."""
-    return _execute_monitoring(scheduled_for)
+def scheduled_arize_export():
+    return _execute_arize_export()
+
+
+# Manual operations function. It runs the same Arize exporter without a schedule
+# so operators can trigger delivery during validation, recovery, or backfills.
+@app.function(
+    image=arize_export_image,
+    secrets=[*runtime_secrets, arize_secret],
+    retries=monitoring_retries,
+    timeout=900,
+)
+def run_arize_export():
+    return _execute_arize_export()
 
 
 def _execute_label_materialization(as_of: str | None = None):
-    """Build label-only dependencies inside the scheduled worker."""
-    from datetime import datetime, timedelta, timezone
+    from src.workers.label_materialization import execute_label_materialization
 
-    from src.config import DatabaseSettings, LabelMaterializationSettings
-    from src.database import create_database_engine
-    from src.monitoring.performance.repository import LabelRepository
-    from src.monitoring.performance.labels import LabelMaterializationJob
-
-    settings = LabelMaterializationSettings()
-    engine = create_database_engine(DatabaseSettings())
-    try:
-        if as_of:
-            observed_at = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
-        else:
-            current = datetime.now(timezone.utc)
-            observed_at = current.replace(hour=2, minute=45, second=0, microsecond=0)
-            if observed_at > current:
-                observed_at -= timedelta(days=1)
-        return LabelMaterializationJob(
-            LabelRepository(engine),
-            required_sources=settings.required_sources,
-            horizon_days=settings.horizon_days,
-            grace_period_days=settings.grace_period_days,
-            label_contract_version=settings.label_contract_version,
-        ).run(
-            environment=settings.environment.value,
-            is_simulated=False,
-            as_of=observed_at,
-        )
-    finally:
-        engine.dispose()
+    return execute_label_materialization(as_of)
 
 
+# Scheduled background function. Modal invokes it daily at 02:45 UTC to resolve
+# matured outcomes into actual labels that the Arize exporter can subsequently send.
 @app.function(
     image=image,
     secrets=runtime_secrets,
@@ -181,6 +88,8 @@ def scheduled_label_materialization():
     return _execute_label_materialization()
 
 
+# Manual operations function. It permits an operator-supplied UTC snapshot for
+# deterministic label replay and correction processing outside the daily schedule.
 @app.function(
     image=image,
     secrets=runtime_secrets,
@@ -190,81 +99,3 @@ def scheduled_label_materialization():
 def run_label_materialization(as_of: str | None = None):
     """Manual label-materialization entrypoint with an optional UTC snapshot."""
     return _execute_label_materialization(as_of)
-
-
-def _execute_performance(as_of: str | None = None):
-    from datetime import datetime, timedelta, timezone
-
-    from src.config import DatabaseSettings, MonitoringSettings, OutcomeMonitoringSettings
-    from src.database import create_database_engine
-    from src.monitoring.__main__ import _store
-    from src.monitoring.performance.repository import LabelRepository, PerformanceRepository
-    from src.monitoring.performance.labels import LabelMaterializationJob
-    from src.monitoring.performance.service import PerformanceJob
-
-    settings = OutcomeMonitoringSettings()
-    artifact_settings = MonitoringSettings()
-    if as_of:
-        evaluated_at = datetime.fromisoformat(as_of.replace("Z", "+00:00"))
-    else:
-        current = datetime.now(timezone.utc)
-        days_since_monday = current.weekday()
-        evaluated_at = (
-            current - timedelta(days=days_since_monday)
-        ).replace(hour=3, minute=30, second=0, microsecond=0)
-        if evaluated_at > current:
-            evaluated_at -= timedelta(days=7)
-    engine = create_database_engine(DatabaseSettings())
-    try:
-        label_summary = LabelMaterializationJob(
-            LabelRepository(engine),
-            required_sources=settings.required_sources,
-            horizon_days=settings.horizon_days,
-            grace_period_days=settings.grace_period_days,
-            label_contract_version=settings.label_contract_version,
-        ).run(environment=settings.environment.value, as_of=evaluated_at)
-        cohort_end = evaluated_at - timedelta(
-            days=settings.horizon_days + settings.grace_period_days
-        )
-        cohort_start = cohort_end - timedelta(days=settings.performance_cohort_days)
-        return PerformanceJob(
-            PerformanceRepository(engine), _store(artifact_settings)
-        ).run(
-            cohort_start=cohort_start,
-            cohort_end=cohort_end,
-            horizon_days=settings.horizon_days,
-            grace_period_days=settings.grace_period_days,
-            outcome_watermark=label_summary["outcome_watermark"],
-            label_contract_version=settings.label_contract_version,
-            model_version_id=settings.model_version_id,
-            deployment_ids=settings.deployment_ids,
-            policy_version=settings.policy_version,
-            classification_threshold=settings.classification_threshold,
-            minimum_privacy_size=settings.minimum_privacy_size,
-            label_revision_watermark=label_summary["label_revision_watermark"],
-            evaluated_at=evaluated_at,
-        )
-    finally:
-        engine.dispose()
-
-
-@app.function(
-    image=image,
-    secrets=runtime_secrets,
-    schedule=modal.Cron("30 3 * * 1", timezone="UTC"),
-    retries=monitoring_retries,
-    timeout=1800,
-)
-def scheduled_performance_monitoring():
-    """Publish a weekly matured-cohort production performance report."""
-    return _execute_performance()
-
-
-@app.function(
-    image=image,
-    secrets=runtime_secrets,
-    retries=monitoring_retries,
-    timeout=1800,
-)
-def run_performance_monitoring(as_of: str | None = None):
-    return _execute_performance(as_of)

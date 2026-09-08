@@ -127,18 +127,23 @@ def test_prohibited_columns_are_case_insensitive_and_cover_aliases():
     assert list(SINGLE_PREDICTION_EXAMPLE) == CANONICAL_FEATURE_ORDER
 
 
-def test_model_trainer_owns_fit_evaluation_and_local_artifacts(tmp_path):
+def test_model_training_and_artifact_publication_are_separate(tmp_path):
     from mlflow.models import infer_signature
 
     from src.components.data_ingestion import DatasetCohorts
-    from src.components.model_trainer import ModelTrainer
+    from src.mlops.training_artifacts import TrainingArtifactWriter
+    from src.training import ModelTrainer
 
     first = dict(SINGLE_PREDICTION_EXAMPLE)
     second = {**first, "Geography": "Germany", "Gender": "Male", "Age": 55}
     features = pd.DataFrame([first, second, first, second])
     cohort = features.assign(Exited=[0, 1, 0, 1])
-    result = ModelTrainer().train(
-        DatasetCohorts(train=cohort, validation=cohort, test=cohort),
+    cohorts = DatasetCohorts(train=cohort, validation=cohort, test=cohort)
+    output_dir = tmp_path / "training"
+    output_dir.mkdir()
+    (output_dir / "stale-from-previous-run.txt").write_text("stale")
+    fitted = ModelTrainer().fit(
+        cohorts,
         {
             "selection_metric": "roc_auc",
             "candidates": {
@@ -151,8 +156,13 @@ def test_model_trainer_owns_fit_evaluation_and_local_artifacts(tmp_path):
         },
         {"minimum_validation_roc_auc": 0.0, "minimum_test_roc_auc": 0.0},
         random_seed=42,
-        output_dir=tmp_path / "training",
-        training_config={"dataset": {"name": "test", "source_identity": "test:data"}},
+    )
+    assert not hasattr(fitted, "artifact_dir")
+    result = TrainingArtifactWriter().write(
+        fitted,
+        cohorts=cohorts,
+        config={"dataset": {"name": "test", "source_identity": "test:data"}},
+        output_dir=output_dir,
     )
     example = pd.DataFrame(
         [SINGLE_PREDICTION_EXAMPLE], columns=CANONICAL_FEATURE_ORDER
@@ -169,6 +179,7 @@ def test_model_trainer_owns_fit_evaluation_and_local_artifacts(tmp_path):
     assert (result.artifact_dir / "evaluation" / "metrics.json").is_file()
     assert (result.artifact_dir / "evaluation" / "model_comparison.json").is_file()
     assert (result.artifact_dir / "references" / "drift_reference.parquet").is_file()
+    assert not (result.artifact_dir / "stale-from-previous-run.txt").exists()
     assert [column.name for column in signature.outputs.inputs] == [
         "predicted_class",
         "churn_probability",

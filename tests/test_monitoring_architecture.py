@@ -5,11 +5,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-import pandas as pd
-
-from src.monitoring.drift.evidently import build_drift_report, run_drift_report
-from src.monitoring.shared.models import MonitoringPolicy, ResultStatus
-
 
 def _imported_by(module: str) -> set[str]:
     script = (
@@ -18,74 +13,35 @@ def _imported_by(module: str) -> set[str]:
         "print(json.dumps(sorted(sys.modules)))"
     )
     completed = subprocess.run(
-        [sys.executable, "-c", script],
-        check=True,
-        capture_output=True,
-        text=True,
+        [sys.executable, "-c", script], check=True, capture_output=True, text=True
     )
     return set(json.loads(completed.stdout))
 
 
-def _small_policy() -> MonitoringPolicy:
-    value = json.loads(Path("configs/monitoring/policy-v1.0.0.json").read_text())
-    value["feature_rules"] = {
-        name: rule
-        for name, rule in value["feature_rules"].items()
-        if name in {"Age", "Geography"}
-    }
-    return MonitoringPolicy.model_validate(value)
-
-
-def test_prediction_route_does_not_import_monitoring_capabilities_or_evidently():
+def test_prediction_route_does_not_import_arize_sdk_or_monitoring_workers():
     imported = _imported_by("src.api.routes.predictions")
-
-    assert not any(name == "evidently" or name.startswith("evidently.") for name in imported)
+    assert "arize" not in imported
+    assert "src.monitoring.arize.exporter" not in imported
     assert "src.monitoring.outcomes.service" not in imported
-    assert not any(name.startswith("src.monitoring.performance") for name in imported)
 
 
-def test_drift_service_does_not_import_outcomes_or_performance():
-    imported = _imported_by("src.monitoring.drift.service")
-
-    assert "src.monitoring.outcomes.service" not in imported
-    assert not any(name.startswith("src.monitoring.performance") for name in imported)
-    assert not any(name == "evidently" or name.startswith("evidently.") for name in imported)
-
-
-def test_pinned_evidently_normalizes_numeric_categorical_and_prediction_drift():
-    policy = _small_policy()
-    reference = pd.DataFrame(
-        {
-            "Age": [25 + index % 30 for index in range(120)],
-            "Geography": ["France", "Germany", "Spain"] * 40,
-            "prediction_probability": [0.1 + (index % 20) / 100 for index in range(120)],
-            "predicted_class": [str(index % 2) for index in range(120)],
-        }
+def test_arize_is_the_only_model_monitoring_platform_dependency():
+    dependency_files = "\n".join(
+        Path(path).read_text(encoding="utf-8").casefold()
+        for path in ("pyproject.toml", "uv.lock", "requirements.txt")
     )
-    current = pd.DataFrame(
-        {
-            "Age": [65 + index % 20 for index in range(120)],
-            "Geography": ["Germany"] * 120,
-            "prediction_probability": [0.75 + (index % 20) / 100 for index in range(120)],
-            "predicted_class": ["1"] * 120,
-        }
-    )
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
+    assert "evidently" not in dependency_files
+    assert '"arize==8.51.0"' in project
+    assert not any(Path("src/monitoring/drift").glob("*.py"))
 
-    report = build_drift_report(policy)
-    output = run_drift_report(reference, current, policy=policy)
 
-    assert type(report).__name__ == "Report"
-    assert type(output.snapshot).__name__ == "Snapshot"
-    assert output.version == "0.7.21"
-    assert output.html.lstrip().startswith(b"<")
-    assert set(output.drift_summary["feature_results"]) == {
-        "Age",
-        "Geography",
-        "prediction_probability",
-        "predicted_class",
-    }
-    assert output.drift_summary["status"] is ResultStatus.WARNING
-    assert all(
-        result["drift_detected"]
-        for result in output.drift_summary["feature_results"].values()
-    )
+def test_modal_has_only_arize_export_and_label_materialization_schedules():
+    source = Path("modal_app.py").read_text(encoding="utf-8")
+    assert "scheduled_arize_export" in source
+    assert "scheduled_label_materialization" in source
+    assert "scheduled_monitoring" not in source
+    assert "scheduled_performance_monitoring" not in source
+    assert "create_database_engine" not in source
+    assert "LabelMaterializationJob" not in source
+    assert "ArizeExporter(" not in source
