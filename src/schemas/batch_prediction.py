@@ -61,6 +61,8 @@ class BatchResultItem(BaseModel):
     id: Any | None = Field(default=None, description="Passed through from customer_id, row_id, or id")
     predicted_label: int
     p_churn: float | None = Field(description="Churn probability, or null when unavailable")
+    prediction_id: str | None = None
+    batch_id: str | None = None
 
 
 class BatchValidationError(BaseModel):

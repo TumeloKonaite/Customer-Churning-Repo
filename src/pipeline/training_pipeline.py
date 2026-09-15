@@ -8,9 +8,10 @@ import numpy as np
 import yaml
 
 from src.components.data_ingestion import DataIngestion
-from src.components.model_trainer import ModelTrainer
 from src.logger import logging
+from src.mlops.training_artifacts import TrainingArtifactWriter
 from src.mlops.tracking import ExperimentTracker, TrackingResult
+from src.training.trainer import ModelTrainer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -29,10 +30,12 @@ class TrainingPipeline:
         self,
         ingestion: DataIngestion | None = None,
         trainer: ModelTrainer | None = None,
+        artifact_writer: TrainingArtifactWriter | None = None,
         tracker: ExperimentTracker | None = None,
     ):
         self.ingestion = ingestion or DataIngestion()
         self.trainer = trainer or ModelTrainer()
+        self.artifact_writer = artifact_writer or TrainingArtifactWriter()
         self.tracker = tracker
 
     def run(
@@ -46,13 +49,17 @@ class TrainingPipeline:
         logging.info("Loading approved training cohorts")
         cohorts = self.ingestion.load(config["dataset"], config["split"])
         logging.info("Fitting and evaluating the unified model pipeline")
-        training = self.trainer.train(
+        fitted = self.trainer.fit(
             cohorts,
             config["model"],
             config["eligibility"],
             random_seed=seed,
+        )
+        training = self.artifact_writer.write(
+            fitted,
+            cohorts=cohorts,
+            config=config,
             output_dir=config.get("output_dir", "artifacts/training"),
-            training_config=config,
         )
         logging.info("Local training artifacts saved to %s", training.artifact_dir)
         tracker = self.tracker or ExperimentTracker()

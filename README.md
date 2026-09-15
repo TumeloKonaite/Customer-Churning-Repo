@@ -9,7 +9,7 @@ An end-to-end machine learning project that predicts whether a bank customer is 
 The system has two main paths:
 
 1. The offline pipeline trains and evaluates models, tracks experiments in DagsHub MLflow, and packages an exact model version for deployment.
-2. The online platform serves predictions through FastAPI on Modal, stores events in Neon PostgreSQL, and runs scheduled drift and performance checks with Evidently.
+2. The online platform serves predictions through FastAPI on Modal, stores events and a transactional export outbox in Neon PostgreSQL, and uses Arize AX for model monitoring and observability.
 
 ## What this project demonstrates
 
@@ -18,8 +18,8 @@ The system has two main paths:
 - Reproducible deployment using exact model versions and checksum validation
 - Single-customer and JSON batch predictions through a typed FastAPI API
 - A responsive React interface for interacting with the model
-- Persistent prediction, outcome, and monitoring records in PostgreSQL
-- Scheduled data-drift and delayed model-performance monitoring
+- Persistent prediction, outcome, label, and export-delivery records in PostgreSQL
+- Scheduled Arize exports for drift, data quality, and delayed model performance
 - Privacy-aware telemetry that excludes direct customer identifiers
 
 ## Tech stack
@@ -31,7 +31,7 @@ The system has two main paths:
 | Machine learning | scikit-learn, pandas, NumPy |
 | Experiment tracking | DagsHub MLflow |
 | Database | Neon PostgreSQL, Alembic |
-| Monitoring | Evidently, immutable JSON/HTML reports |
+| Monitoring | Arize AX Cloud |
 | Deployment | Modal, Vercel, GitHub Actions |
 | Tooling | uv, pytest, Vitest |
 
@@ -41,7 +41,15 @@ The system has two main paths:
 2. FastAPI validates the request against the model's input contract.
 3. The packaged preprocessing pipeline transforms the data and predicts churn probability.
 4. The API returns the prediction and records a privacy-safe monitoring event.
-5. Scheduled jobs compare production traffic with an approved reference baseline.
+5. An hourly worker exports approved production telemetry to Arize.
+6. Arize compares production traffic with the approved reference baseline and
+   incorporates delayed actual labels when they mature.
+
+Arize export is asynchronous and disabled until a matching, unexpired privacy
+approval exists. Operational setup and rollback are in
+[the Arize runbook](docs/monitoring/arize-operations.md).
+View the deployed model in the
+[Arize churn predictor dashboard](https://app.arize.com/organizations/QWNjb3VudE9yZ2FuaXphdGlvbjo1MDEwMDplbGtR/spaces/U3BhY2U6NTM4ODY6QStEeA==/models/modelName/churn_predictor?selectedTab=performance).
 
 ### Main API endpoints
 
@@ -103,12 +111,15 @@ npm run build
 
 ```text
 frontend/            React prediction workspace
+deployment/          Modal-specific image and deployment resources
 src/api/             FastAPI routes and request contracts
-src/components/      Data ingestion, validation, training, and evaluation
+src/components/      Data ingestion and preprocessing construction
+src/training/        Typed model fitting, evaluation, and selection
 src/pipeline/        Training and inference orchestration
-src/mlops/           Model registry and deployment packaging
+src/mlops/           Artifact publication, tracking, registry, and packaging
 src/database/        Persistence layer and repositories
-src/monitoring/      Drift, labels, and performance workflows
+src/monitoring/      Arize export and delayed-label workflows
+src/workers/         Runtime composition for API and scheduled jobs
 configs/             Versioned training and monitoring configuration
 migrations/          PostgreSQL schema migrations
 tests/               Backend test suite
@@ -118,8 +129,8 @@ tests/               Backend test suite
 
 - [Frontend setup and deployment](frontend/README.md)
 - [Monitoring overview](docs/monitoring/README.md)
-- [Data-quality and drift jobs](docs/monitoring/data-quality-drift-jobs-v1.md)
-- [Outcome labels and performance](docs/monitoring/outcomes-labels-performance-v1.md)
+- [Arize operations](docs/monitoring/arize-operations.md)
+- [Outcome labels](docs/monitoring/outcomes-labels-v1.md)
 - [Production monitoring contract](docs/monitoring/production-monitoring-contract-v1.md)
 
 ## License

@@ -1,41 +1,17 @@
-"""Immutable artifact-bucket reads and monitoring report publication."""
+"""Artifact reads used to load approved Arize reference baselines."""
 
 from __future__ import annotations
 
+import re
+import tempfile
 from dataclasses import dataclass
-import json
-from pathlib import Path, PurePosixPath
-from typing import Any, Protocol
-from urllib.parse import quote, urlparse
-
-from src.monitoring.shared.models import canonical_json_bytes, sha256_bytes
-
-
-class ArtifactConflictError(RuntimeError):
-    pass
+from pathlib import Path
+from typing import Protocol
+from urllib.parse import urlparse
 
 
 class ArtifactStore(Protocol):
     def read_uri(self, uri: str) -> bytes: ...
-    def put_immutable(self, key: str, body: bytes, content_type: str) -> str: ...
-
-
-def artifact_prefix(model_version_id: str, baseline_version_id: str, run_id: str) -> str:
-    segments: list[str] = []
-    for value in (model_version_id, baseline_version_id, run_id):
-        if not value or value in {".", ".."}:
-            raise ValueError("artifact path identities must be non-empty")
-        segments.append(quote(value, safe="-._~:"))
-    return f"monitoring/{segments[0]}/{segments[1]}/drift/{segments[2]}"
-
-
-def performance_artifact_prefix(model_version_id: str, monitoring_run_id: str) -> str:
-    segments: list[str] = []
-    for value in (model_version_id, monitoring_run_id):
-        if not value or value in {".", ".."}:
-            raise ValueError("artifact path identities must be non-empty")
-        segments.append(quote(value, safe="-._~:"))
-    return f"monitoring/{segments[0]}/performance/{segments[1]}"
 
 
 @dataclass(slots=True)
@@ -58,34 +34,10 @@ class S3ArtifactStore:
         response = self._client().get_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
         return response["Body"].read()
 
-    def put_immutable(self, key: str, body: bytes, content_type: str) -> str:
-        normalized = PurePosixPath(key).as_posix()
-        if normalized != key or key.startswith("/") or ".." in PurePosixPath(key).parts:
-            raise ValueError("artifact key is not normalized")
-        checksum = sha256_bytes(body)
-        client = self._client()
-        try:
-            client.put_object(
-                Bucket=self.bucket,
-                Key=key,
-                Body=body,
-                ContentType=content_type,
-                Metadata={"sha256": checksum},
-                IfNoneMatch="*",
-            )
-        except Exception as exc:
-            try:
-                existing = client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
-            except Exception:
-                raise exc
-            if sha256_bytes(existing) != checksum:
-                raise ArtifactConflictError(f"immutable artifact conflict at {key}") from exc
-        return f"s3://{self.bucket}/{key}"
-
 
 @dataclass(slots=True)
 class LocalArtifactStore:
-    """Filesystem implementation for local debugging and unit tests."""
+    """Filesystem implementation for local baseline loading and tests."""
 
     root: Path
 
@@ -95,57 +47,27 @@ class LocalArtifactStore:
             raise ValueError("local artifact store only accepts file URIs")
         return Path(parsed.path if parsed.scheme else uri).read_bytes()
 
-    def put_immutable(self, key: str, body: bytes, content_type: str) -> str:
-        del content_type
-        path = self.root.joinpath(*PurePosixPath(key).parts)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists():
-            if path.read_bytes() != body:
-                raise ArtifactConflictError(f"immutable artifact conflict at {key}")
-        else:
-            path.write_bytes(body)
-        return path.resolve().as_uri()
 
+@dataclass(slots=True)
+class MLflowArtifactStore:
+    """Read an immutable run artifact through the configured MLflow backend."""
 
-def publish_report_bundle(
-    store: ArtifactStore,
-    *,
-    prefix: str,
-    html: bytes,
-    report: dict[str, Any],
-    summary: dict[str, Any],
-) -> dict[str, Any]:
-    payloads = {
-        "report.html": (html, "text/html; charset=utf-8"),
-        "report.json": (canonical_json_bytes(report), "application/json"),
-        "summary.json": (canonical_json_bytes(summary), "application/json"),
-    }
-    checksums = {name: sha256_bytes(body) for name, (body, _) in payloads.items()}
-    payloads["checksums.json"] = (
-        canonical_json_bytes({"algorithm": "sha256", "artifacts": checksums}),
-        "application/json",
-    )
-    uris = {
-        name: store.put_immutable(f"{prefix}/{name}", body, content_type)
-        for name, (body, content_type) in payloads.items()
-    }
-    return {"uris": uris, "checksums": checksums}
+    def read_uri(self, uri: str) -> bytes:
+        match = re.fullmatch(r"runs:/([0-9a-fA-F]{32})/(.+)", uri)
+        if not match or ".." in Path(match.group(2)).parts:
+            raise ValueError(
+                "MLflow artifact store requires a runs:/<run-id>/<artifact-path> URI"
+            )
 
+        import mlflow
 
-def publish_summary_bundle(
-    store: ArtifactStore, *, prefix: str, summary: dict[str, Any]
-) -> dict[str, Any]:
-    body = canonical_json_bytes(summary)
-    checksums = {"summary.json": sha256_bytes(body)}
-    checksum_body = canonical_json_bytes(
-        {"algorithm": "sha256", "artifacts": checksums}
-    )
-    uris = {
-        "summary.json": store.put_immutable(
-            f"{prefix}/summary.json", body, "application/json"
-        ),
-        "checksums.json": store.put_immutable(
-            f"{prefix}/checksums.json", checksum_body, "application/json"
-        ),
-    }
-    return {"uris": uris, "checksums": checksums}
+        with tempfile.TemporaryDirectory() as directory:
+            downloaded = Path(
+                mlflow.artifacts.download_artifacts(
+                    artifact_uri=uri,
+                    dst_path=directory,
+                )
+            )
+            if not downloaded.is_file():
+                raise ValueError("MLflow artifact URI did not resolve to a file")
+            return downloaded.read_bytes()

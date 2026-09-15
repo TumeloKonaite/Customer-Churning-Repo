@@ -148,6 +148,9 @@ def test_repository_uses_one_transaction_and_explicitly_marks_events_ineligible(
     stored_features = json.loads(parameters[0]["features"])
     assert set(stored_features) == set(REQUIRED_FIELDS)
     assert not {"customer_id", "row_id", "id"} & set(stored_features)
+    assert len(executions) == 2
+    assert "INSERT INTO arize_export_events" in executions[1][0]
+    assert executions[1][1] == [{"prediction_id": "prediction-1"}]
 
 
 def test_single_prediction_persists_before_returning_success(monkeypatch):

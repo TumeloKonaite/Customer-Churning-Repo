@@ -18,6 +18,12 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class MonitoringArtifactBackend(StrEnum):
+    S3 = "s3"
+    LOCAL = "local"
+    MLFLOW = "mlflow"
+
+
 class _Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=None,
@@ -145,10 +151,13 @@ class DeploymentSettings(_Settings):
 
 
 class MonitoringSettings(_Settings):
-    """Artifact-bucket and exact-model settings used only by monitoring workers."""
+    """Reference-artifact and exact-model settings used by monitoring workers."""
 
     environment: Environment = Field(default=Environment.DEVELOPMENT, alias="APP_ENV")
     model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
+    artifact_backend: MonitoringArtifactBackend | None = Field(
+        default=None, alias="MONITORING_ARTIFACT_BACKEND"
+    )
     artifact_bucket: str | None = Field(default=None, alias="MONITORING_ARTIFACT_BUCKET")
     artifact_endpoint_url: str | None = Field(
         default=None, alias="MONITORING_ARTIFACT_ENDPOINT_URL"
@@ -159,14 +168,52 @@ class MonitoringSettings(_Settings):
     )
 
     @model_validator(mode="after")
-    def one_artifact_backend(self) -> "MonitoringSettings":
-        if bool(self.artifact_bucket) == bool(self.local_artifact_dir):
-            raise ValueError(
-                "configure exactly one of MONITORING_ARTIFACT_BUCKET or "
-                "MONITORING_LOCAL_ARTIFACT_DIR"
+    def valid_artifact_backend(self) -> "MonitoringSettings":
+        # Infer the legacy S3/local configuration when the selector is omitted.
+        if self.artifact_backend is None:
+            if self.artifact_bucket and not self.local_artifact_dir:
+                self.artifact_backend = MonitoringArtifactBackend.S3
+            elif self.local_artifact_dir and not self.artifact_bucket:
+                self.artifact_backend = MonitoringArtifactBackend.LOCAL
+            else:
+                raise ValueError(
+                    "configure MONITORING_ARTIFACT_BACKEND, or exactly one of "
+                    "MONITORING_ARTIFACT_BUCKET and MONITORING_LOCAL_ARTIFACT_DIR"
+                )
+        if self.artifact_backend is MonitoringArtifactBackend.S3:
+            if not self.artifact_bucket or self.local_artifact_dir:
+                raise ValueError(
+                    "the s3 monitoring artifact backend requires only "
+                    "MONITORING_ARTIFACT_BUCKET"
+                )
+        elif self.artifact_backend is MonitoringArtifactBackend.LOCAL:
+            if (
+                not self.local_artifact_dir
+                or self.artifact_bucket
+                or self.artifact_endpoint_url
+                or self.artifact_region
+            ):
+                raise ValueError(
+                    "the local monitoring artifact backend requires only "
+                    "MONITORING_LOCAL_ARTIFACT_DIR"
+                )
+        elif any(
+            (
+                self.artifact_bucket,
+                self.artifact_endpoint_url,
+                self.artifact_region,
+                self.local_artifact_dir,
             )
-        if self.environment is Environment.PRODUCTION and not self.artifact_bucket:
-            raise ValueError("production monitoring requires MONITORING_ARTIFACT_BUCKET")
+        ):
+            raise ValueError(
+                "the mlflow monitoring artifact backend cannot be combined with "
+                "S3 or local artifact settings"
+            )
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.artifact_backend is MonitoringArtifactBackend.LOCAL
+        ):
+            raise ValueError("production monitoring cannot use local artifacts")
         return self
 
 
@@ -233,41 +280,6 @@ class LabelMaterializationSettings(_Settings):
             and not self.label_contract_approved
         ):
             raise ValueError("production label monitoring requires an approved contract")
-        return self
-
-
-class OutcomeMonitoringSettings(LabelMaterializationSettings):
-    """Additional inputs required by performance monitoring workers."""
-
-    model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
-    deployment_ids_csv: str = Field(alias="MONITORING_DEPLOYMENT_IDS")
-    policy_version: str = Field(default="1.0.0", alias="MONITORING_POLICY_VERSION")
-    performance_cohort_days: int = Field(
-        default=30, ge=1, alias="PERFORMANCE_COHORT_DAYS"
-    )
-    classification_threshold: float = Field(
-        default=0.5, ge=0, le=1, alias="DEPLOYED_CLASSIFICATION_THRESHOLD"
-    )
-    minimum_privacy_size: int = Field(
-        default=20, ge=2, alias="MONITORING_MINIMUM_PRIVACY_SIZE"
-    )
-
-    @property
-    def deployment_ids(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                value.strip()
-                for value in self.deployment_ids_csv.split(",")
-                if value.strip()
-            )
-        )
-
-    @model_validator(mode="after")
-    def complete_identity(self) -> "OutcomeMonitoringSettings":
-        if not self.deployment_ids:
-            raise ValueError("MONITORING_DEPLOYMENT_IDS must not be empty")
-        if self.environment is Environment.PRODUCTION and self.minimum_privacy_size < 20:
-            raise ValueError("production minimum privacy size must be at least 20")
         return self
 
 

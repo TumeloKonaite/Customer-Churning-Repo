@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from sqlalchemy import Engine, bindparam, text
 
-from src.monitoring.performance.labels import (
+from src.monitoring.labels.job import (
     LabelingPrediction,
     LabelRevision,
     OutcomeSnapshot,
@@ -313,6 +313,30 @@ class LabelRepository:
                     ),
                     values,
                 ).mappings().one()
+            if (
+                not is_simulated
+                and row["status"] in {"positive", "negative"}
+                and row["label_value"] in {0, 1}
+            ):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO arize_export_events (
+                            prediction_id, event_type, label_revision_id,
+                            status, next_attempt_at
+                        SELECT p.prediction_id, 'actual', :label_revision_id,
+                               'pending', GREATEST(clock_timestamp(), p.horizon_end)
+                        FROM prediction_events p
+                        WHERE p.prediction_id = :prediction_id
+                          AND p.horizon_end IS NOT NULL
+                        ON CONFLICT DO NOTHING
+                        """
+                    ),
+                    {
+                        "prediction_id": row["prediction_id"],
+                        "label_revision_id": row["label_revision_id"],
+                    },
+                )
         return LabelRevision.model_validate(dict(row))
 
     def count_quarantined_outcomes(self, *, as_of: datetime) -> int:
@@ -374,8 +398,4 @@ def _simulation_scope(
     return f"simulation:{len(generator)}:{generator}:{len(scenario)}:{scenario}"
 
 
-# Kept as one implementation during the schema-preserving refactor; consumers use
-# this repository boundary while the orchestration module remains database-agnostic.
-from src.monitoring.performance.service import PerformanceRepository  # noqa: E402
-
-__all__ = ["LabelRepository", "PerformanceRepository"]
+__all__ = ["LabelRepository"]

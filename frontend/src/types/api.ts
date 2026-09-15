@@ -31,6 +31,7 @@ export interface PredictionResponse {
   status: "success";
   predicted_label: number;
   p_churn: number | null;
+  prediction_id?: string | null;
   model_name: string;
   model_version?: string | null;
   deployment_id?: string | null;
@@ -57,6 +58,8 @@ export interface BatchResultItem {
   id: unknown | null;
   predicted_label: number;
   p_churn: number | null;
+  prediction_id?: string | null;
+  batch_id?: string | null;
 }
 
 export interface BatchValidationError {

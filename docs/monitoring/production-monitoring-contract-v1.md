@@ -18,9 +18,9 @@ defaults, not assertions about an unknown source system.
 
 ## Activation and approval gate
 
-No accuracy, precision, recall, calibration, drift-by-outcome, or other
+No Arize accuracy, precision, recall, calibration, drift-by-outcome, or other
 label-dependent production metric is authoritative while this contract is not
-`APPROVED`. A monitoring job must fail closed unless its configured contract
+`APPROVED`. The Arize actual-label feed must fail closed unless its configured contract
 version has:
 
 1. status `APPROVED`;
@@ -69,7 +69,7 @@ a proposed canonical name and production labels are disabled.
   are quarantined.
 - A higher revision supersedes a lower revision. A retraction removes the event
   from label calculation. Changed or retracted events rematerialize affected
-  labels and mark already published reports as superseded; history remains
+  labels and mark already exported Arize actuals as superseded; history remains
   auditable.
 - Late events use `effective_at` for the window test. Processing time never moves
   an event into or out of a prediction window.
@@ -96,7 +96,7 @@ state remains `pending`. A negative is allowed at or after the maturity instant.
 
 Events arriving during the grace period are processed normally. A valid event
 arriving after maturity still corrects the historical label; it also emits a
-late-data quality signal and supersedes affected official report versions.
+late-data quality signal and supersedes affected Arize evaluation versions.
 Producers must be monitored against the proposed seven-day service objective.
 
 ## 3. Prediction-to-outcome attribution
@@ -128,7 +128,7 @@ The current public prediction response does not expose `prediction_id` or accept
 trusted tokenized identity. The application persists privacy-safe prediction
 events with `monitoring_eligible=false`; these rows must not be attributed to
 outcomes. Trusted identity, horizon, and idempotency integration remain separate
-prerequisites for production performance monitoring.
+prerequisites for production performance monitoring in Arize.
 
 ## 4. Customer identity and HMAC tokenization
 
@@ -204,10 +204,10 @@ limits prevail.
 | Outcome events | 400 days | Delete customer-level record |
 | Prediction labels and revisions | 400 days | Delete customer-level record |
 | Customer-level monitoring datasets | 400 days | Delete and invalidate extracts |
-| Aggregate Evidently/monitoring reports | 24 months | Delete report and cache |
+| Aggregate Arize monitoring data | Per approved Arize retention | Delete through Arize and retain audit evidence |
 | Extraction/job metadata | 90 days | Delete; retain only non-identifying audit summary |
 | Operational logs | 30 days | Delete from primary and log archive |
-| Simulated outcomes and reports | 30 days | Delete by scenario/run ID |
+| Simulated outcomes and Arize evaluation exports | 30 days | Delete by scenario/run ID |
 
 **Decision required (D-005):** Privacy, Security, and the Data Owner must approve
 these periods against law, contract, incident-response, and business needs.
@@ -219,7 +219,7 @@ these periods against law, contract, incident-response, and business needs.
   not restored into live service; restore procedures replay deletion tombstones.
 - A documented legal hold suspends only scoped destruction, records authority and
   expiry, restricts access, and resumes deletion when released.
-- Aggregate reports may outlive customer-level data only if they contain no tokens,
+- Aggregate Arize views may outlive customer-level data only if they contain no tokens,
   satisfy the segment policy, cannot be differenced to recover small cohorts, and
   are no longer traceable to a customer. Otherwise they share the 400-day limit.
 - “Anonymization” must be validated as irreversible; tokenization alone is not
@@ -229,7 +229,7 @@ these periods against law, contract, incident-response, and business needs.
 
 `A` = allowed as a normal duty, `B` = time-limited break glass with review, `—` =
 denied. Service identities and people use separate credentials. Production
-application, migration, monitoring job, and report-reader credentials are distinct.
+application, migration, Arize exporter, and Arize viewer credentials are distinct.
 
 | Capability | Prediction app | Outcome ingestor | Label job | Monitoring analyst | Report viewer | Platform migration | Policy admin | Security break-glass |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -237,8 +237,8 @@ application, migration, monitoring job, and report-reader credentials are distin
 | Ingest outcomes | — | A | — | — | — | — | — | B |
 | Materialize labels | — | — | A | — | — | — | — | B |
 | Read customer-level monitoring data | — | — | A | A | — | — | — | B |
-| Run monitoring jobs | — | — | A | A | — | — | — | B |
-| View aggregate reports | — | — | A | A | A | — | A | B |
+| Run Arize exports | — | — | A | A | — | — | — | B |
+| View aggregate Arize data | — | — | A | A | A | — | A | B |
 | Change schema/migrate storage | — | — | — | — | — | A | — | B |
 | Change monitoring policies/contracts | — | — | — | — | — | — | A | B |
 | Change retention settings | — | — | — | — | — | — | A | B |
@@ -281,7 +281,7 @@ A simulated event additionally requires `generator_version` and
   source names are allow-listed independently after D-001 is resolved.
 - A dataset or report must contain only real outcomes or only one declared
   simulation run. Mixing real and simulated outcomes is prohibited.
-- Official reports accept only real outcomes. Simulation reports carry metadata
+- Official Arize evaluations accept only real outcomes. Simulation exports carry metadata
   `official=false`, `is_simulated=true`, generator/scenario versions and run ID,
   and display `SIMULATED — NOT PRODUCTION PERFORMANCE` in title and export.
 - Simulation data is isolated by environment and storage prefix, deleted within
@@ -294,7 +294,7 @@ Contract versions use semantic versioning. A breaking definition, boundary,
 identity, or privacy change increments major; an additive event/field/role change
 increments minor; clarification with no behavior change increments patch. Stored
 predictions and labels retain the version effective when created; historical
-reports are not silently recomputed under a new version.
+Arize evaluations are not silently recomputed under a new version.
 
 Any change includes rationale, decision-log updates, executable examples, migration
 and report-restatement impact, owner, all affected approvers, approval/effective
@@ -341,7 +341,7 @@ rules. `tests/test_monitoring_contracts.py` covers:
 - deterministic HMACs and namespace separation;
 - rejection of raw identifiers in monitoring logs;
 - suppression below k; and
-- rejection of simulated/real mixtures and simulations in official reports.
+- rejection of simulated/real mixtures and simulations in official Arize evaluations.
 
 Executable examples do not replace approval. The fail-closed activation gate at
 the beginning remains authoritative.

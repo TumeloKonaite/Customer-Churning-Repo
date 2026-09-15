@@ -45,13 +45,15 @@ def test_predict_returns_prediction_only_contract(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert set(body) == {
-        "status", "predicted_label", "p_churn", "model_name", "model_version", "timestamp"
+        "status", "predicted_label", "p_churn", "prediction_id", "model_name",
+        "model_version", "timestamp"
     }
     assert body["status"] == "success"
     assert body["predicted_label"] == 1
     assert body["p_churn"] == 0.82
     assert body["model_name"] == "test_model"
     assert body["model_version"] == "9.9.9"
+    assert body["prediction_id"]
 
 
 def test_predict_probability_unavailable_is_null(monkeypatch):
