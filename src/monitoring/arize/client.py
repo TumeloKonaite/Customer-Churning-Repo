@@ -33,6 +33,7 @@ class ArizeV8Client:
         }[settings.environment.value]
         self._model_type = ModelTypes.BINARY_CLASSIFICATION
         self._Schema = Schema
+        self._validation_environment = Environments.VALIDATION
 
     def log_predictions(self, frame: pd.DataFrame, *, model_version: str) -> None:
         schema = self._Schema(
@@ -57,8 +58,6 @@ class ArizeV8Client:
     def log_baseline(
         self, frame: pd.DataFrame, *, model_version: str, batch_id: str
     ) -> None:
-        from arize.ml.types import Environments
-
         schema = self._Schema(
             prediction_id_column_name="prediction_id",
             timestamp_column_name="prediction_timestamp",
@@ -70,7 +69,7 @@ class ArizeV8Client:
         )
         self._log(
             frame, schema=schema, model_version=model_version,
-            environment=Environments.VALIDATION, batch_id=batch_id,
+            environment=self._validation_environment, batch_id=batch_id,
         )
 
     def _log(

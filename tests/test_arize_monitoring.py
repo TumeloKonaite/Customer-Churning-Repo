@@ -100,6 +100,7 @@ def test_baseline_client_uses_labeled_validation_batch():
 
     client = object.__new__(ArizeV8Client)
     client._Schema = lambda **fields: fields
+    client._validation_environment = "validation"
     calls = []
     client._log = lambda frame, **kwargs: calls.append((frame, kwargs))
 
