@@ -54,28 +54,28 @@ class ArizeV8Client:
         )
         self._log(frame, schema=schema, model_version=model_version)
 
-    def log_baseline(self, frame: pd.DataFrame, *, model_version: str, has_actuals: bool) -> None:
+    def log_baseline(
+        self, frame: pd.DataFrame, *, model_version: str, batch_id: str
+    ) -> None:
         from arize.ml.types import Environments
 
-        fields = dict(
+        schema = self._Schema(
             prediction_id_column_name="prediction_id",
             timestamp_column_name="prediction_timestamp",
             prediction_label_column_name="prediction_label",
             prediction_score_column_name="prediction_score",
+            actual_label_column_name="actual_label",
             feature_column_names=list(ARIZE_FEATURES),
             tag_column_names=list(BASELINE_TAGS),
         )
-        if has_actuals:
-            fields["actual_label_column_name"] = "actual_label"
-        schema = self._Schema(**fields)
         self._log(
             frame, schema=schema, model_version=model_version,
-            environment=Environments.VALIDATION,
+            environment=Environments.VALIDATION, batch_id=batch_id,
         )
 
     def _log(
         self, frame: pd.DataFrame, *, schema: Any, model_version: str,
-        environment: Any | None = None,
+        environment: Any | None = None, batch_id: str = "",
     ) -> None:
         try:
             response = self._client.ml.log(
@@ -86,6 +86,7 @@ class ArizeV8Client:
                 dataframe=frame,
                 schema=schema,
                 model_version=model_version,
+                batch_id=batch_id,
             )
         except Exception as exc:
             status = getattr(exc, "status_code", None)

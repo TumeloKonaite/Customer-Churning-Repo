@@ -7,9 +7,19 @@ from datetime import datetime, timezone
 import json
 import sys
 
-from src.config import DatabaseSettings, MonitoringSettings, safe_error_message
+from src.config import (
+    DagsHubSettings,
+    DatabaseSettings,
+    MonitoringArtifactBackend,
+    MonitoringSettings,
+    safe_error_message,
+)
 from src.database import create_database_engine
-from src.monitoring.shared.artifacts import LocalArtifactStore, S3ArtifactStore
+from src.monitoring.shared.artifacts import (
+    LocalArtifactStore,
+    MLflowArtifactStore,
+    S3ArtifactStore,
+)
 
 from .baseline import upload_baseline
 from .client import ArizeV8Client
@@ -26,10 +36,17 @@ def _date(value: str) -> datetime:
 
 
 def _store(settings: MonitoringSettings):
-    if settings.local_artifact_dir is not None:
+    if settings.artifact_backend is MonitoringArtifactBackend.MLFLOW:
+        from src.mlops.tracking import configure_tracking_backend
+
+        configure_tracking_backend(DagsHubSettings())
+        return MLflowArtifactStore()
+    if settings.artifact_backend is MonitoringArtifactBackend.LOCAL:
+        assert settings.local_artifact_dir is not None
         return LocalArtifactStore(settings.local_artifact_dir)
+    assert settings.artifact_bucket is not None
     return S3ArtifactStore(
-        settings.artifact_bucket or "",
+        settings.artifact_bucket,
         endpoint_url=settings.artifact_endpoint_url,
         region_name=settings.artifact_region,
     )

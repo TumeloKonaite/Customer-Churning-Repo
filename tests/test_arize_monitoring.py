@@ -7,7 +7,7 @@ import pandas as pd
 
 from src.model_schema import CANONICAL_FEATURE_ORDER
 from src.monitoring.arize.client import ArizeDeliveryError, ArizePermanentError
-from src.monitoring.arize.baseline import validate_reference
+from src.monitoring.arize.baseline import reference_predictions, validate_reference
 from src.monitoring.arize.config import ArizeExportSettings
 from src.monitoring.arize.exporter import ArizeExporter
 from src.monitoring.arize.schema import (
@@ -73,6 +73,47 @@ def test_baseline_checksum_schema_and_empty_validation():
     assert list(validated.columns) == CANONICAL_FEATURE_ORDER
     with pytest.raises(ValueError, match="checksum"):
         validate_reference(body, expected_sha256="0" * 64, schema_version="1.0.0")
+
+
+def test_baseline_uses_pipeline_class_contract():
+    class NamedOutputPipeline:
+        classes_ = [1, 0]
+
+        def predict(self, features):
+            raise AssertionError("named MLflow output must not be treated as labels")
+
+        def predict_classes(self, features):
+            return pd.Series([1, 0])
+
+        def predict_proba(self, features):
+            return pd.DataFrame([[0.8, 0.2], [0.3, 0.7]]).to_numpy()
+
+    features = pd.DataFrame([{}, {}])
+    labels, probabilities = reference_predictions(NamedOutputPipeline(), features)
+
+    assert labels.tolist() == [1, 0]
+    assert probabilities.tolist() == [0.8, 0.3]
+
+
+def test_baseline_client_uses_labeled_validation_batch():
+    from src.monitoring.arize.client import ArizeV8Client
+
+    client = object.__new__(ArizeV8Client)
+    client._Schema = lambda **fields: fields
+    calls = []
+    client._log = lambda frame, **kwargs: calls.append((frame, kwargs))
+
+    frame = pd.DataFrame(
+        {
+            "baseline_version_id": ["baseline-v1"],
+            "actual_label": ["churn"],
+        }
+    )
+    client.log_baseline(frame, model_version="5", batch_id="baseline-v1")
+
+    _, kwargs = calls[0]
+    assert kwargs["batch_id"] == "baseline-v1"
+    assert kwargs["schema"]["actual_label_column_name"] == "actual_label"
 
 
 def test_delayed_actual_reuses_prediction_id_and_original_version():

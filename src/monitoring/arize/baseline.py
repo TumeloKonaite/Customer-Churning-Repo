@@ -36,6 +36,19 @@ def validate_reference(body: bytes, *, expected_sha256: str, schema_version: str
     return frame
 
 
+def reference_predictions(pipeline, features: pd.DataFrame):
+    """Return class labels and positive-class scores from the packaged pipeline."""
+    label_predictor = getattr(pipeline, "predict_classes", pipeline.predict)
+    labels = label_predictor(features)
+    classes = list(pipeline.classes_)
+    if 1 not in classes:
+        raise ValueError("packaged pipeline has no positive churn class")
+    probabilities = pipeline.predict_proba(features)[:, classes.index(1)]
+    if len(labels) != len(features) or len(probabilities) != len(features):
+        raise ValueError("packaged pipeline returned an invalid prediction row count")
+    return labels, probabilities
+
+
 def upload_baseline(
     *, engine: Engine, store: ArtifactStore, client: ArizeV8Client,
     settings: ArizeExportSettings, model_version_id: str,
@@ -78,6 +91,10 @@ def upload_baseline(
         body, expected_sha256=baseline["reference_sha256"],
         schema_version=baseline["feature_schema_version"],
     )
+    if TARGET_COLUMN not in frame:
+        raise ValueError(
+            "Arize validation baseline requires an approved labeled reference dataset"
+        )
     from src.mlops.deployment import validate_packaged_model
 
     metadata = validate_packaged_model(package_dir)
@@ -87,8 +104,7 @@ def upload_baseline(
 
     pipeline = mlflow.sklearn.load_model(str(Path(package_dir) / "model"))
     features = frame[CANONICAL_FEATURE_ORDER]
-    probabilities = pipeline.predict_proba(features)[:, 1]
-    labels = pipeline.predict(features)
+    labels, probabilities = reference_predictions(pipeline, features)
     uploaded = features.copy()
     uploaded["prediction_id"] = [
         sha256(f"{baseline['reference_sha256']}:{index}".encode()).hexdigest()
@@ -101,13 +117,13 @@ def upload_baseline(
     uploaded["prediction_score"] = probabilities
     uploaded["model_version_id"] = model_version_id
     uploaded["baseline_version_id"] = baseline_version_id
-    has_actuals = TARGET_COLUMN in frame
-    if has_actuals:
-        uploaded["actual_label"] = [binary_label(int(value)) for value in frame[TARGET_COLUMN]]
+    uploaded["actual_label"] = [
+        binary_label(int(value)) for value in frame[TARGET_COLUMN]
+    ]
     client.log_baseline(
         uploaded.reset_index(drop=True),
         model_version=numeric_model_version(model_version_id),
-        has_actuals=has_actuals,
+        batch_id=baseline_version_id,
     )
     with engine.begin() as connection:
         connection.execute(text("""

@@ -18,6 +18,12 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+class MonitoringArtifactBackend(StrEnum):
+    S3 = "s3"
+    LOCAL = "local"
+    MLFLOW = "mlflow"
+
+
 class _Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=None,
@@ -145,10 +151,13 @@ class DeploymentSettings(_Settings):
 
 
 class MonitoringSettings(_Settings):
-    """Artifact-bucket and exact-model settings used only by monitoring workers."""
+    """Reference-artifact and exact-model settings used by monitoring workers."""
 
     environment: Environment = Field(default=Environment.DEVELOPMENT, alias="APP_ENV")
     model_version_id: str = Field(alias="EXPECTED_MODEL_VERSION_ID")
+    artifact_backend: MonitoringArtifactBackend | None = Field(
+        default=None, alias="MONITORING_ARTIFACT_BACKEND"
+    )
     artifact_bucket: str | None = Field(default=None, alias="MONITORING_ARTIFACT_BUCKET")
     artifact_endpoint_url: str | None = Field(
         default=None, alias="MONITORING_ARTIFACT_ENDPOINT_URL"
@@ -159,14 +168,52 @@ class MonitoringSettings(_Settings):
     )
 
     @model_validator(mode="after")
-    def one_artifact_backend(self) -> "MonitoringSettings":
-        if bool(self.artifact_bucket) == bool(self.local_artifact_dir):
-            raise ValueError(
-                "configure exactly one of MONITORING_ARTIFACT_BUCKET or "
-                "MONITORING_LOCAL_ARTIFACT_DIR"
+    def valid_artifact_backend(self) -> "MonitoringSettings":
+        # Infer the legacy S3/local configuration when the selector is omitted.
+        if self.artifact_backend is None:
+            if self.artifact_bucket and not self.local_artifact_dir:
+                self.artifact_backend = MonitoringArtifactBackend.S3
+            elif self.local_artifact_dir and not self.artifact_bucket:
+                self.artifact_backend = MonitoringArtifactBackend.LOCAL
+            else:
+                raise ValueError(
+                    "configure MONITORING_ARTIFACT_BACKEND, or exactly one of "
+                    "MONITORING_ARTIFACT_BUCKET and MONITORING_LOCAL_ARTIFACT_DIR"
+                )
+        if self.artifact_backend is MonitoringArtifactBackend.S3:
+            if not self.artifact_bucket or self.local_artifact_dir:
+                raise ValueError(
+                    "the s3 monitoring artifact backend requires only "
+                    "MONITORING_ARTIFACT_BUCKET"
+                )
+        elif self.artifact_backend is MonitoringArtifactBackend.LOCAL:
+            if (
+                not self.local_artifact_dir
+                or self.artifact_bucket
+                or self.artifact_endpoint_url
+                or self.artifact_region
+            ):
+                raise ValueError(
+                    "the local monitoring artifact backend requires only "
+                    "MONITORING_LOCAL_ARTIFACT_DIR"
+                )
+        elif any(
+            (
+                self.artifact_bucket,
+                self.artifact_endpoint_url,
+                self.artifact_region,
+                self.local_artifact_dir,
             )
-        if self.environment is Environment.PRODUCTION and not self.artifact_bucket:
-            raise ValueError("production monitoring requires MONITORING_ARTIFACT_BUCKET")
+        ):
+            raise ValueError(
+                "the mlflow monitoring artifact backend cannot be combined with "
+                "S3 or local artifact settings"
+            )
+        if (
+            self.environment is Environment.PRODUCTION
+            and self.artifact_backend is MonitoringArtifactBackend.LOCAL
+        ):
+            raise ValueError("production monitoring cannot use local artifacts")
         return self
 
 

@@ -18,6 +18,27 @@ uv run --env-file .env alembic current
 
 Upload only the registered approved reference artifact:
 
+```dotenv
+MONITORING_ARTIFACT_BACKEND=mlflow
+ENABLE_DAGSHUB_TRACKING=true
+DAGSHUB_REPO_OWNER=<owner>
+DAGSHUB_REPO_NAME=<repository>
+DAGSHUB_TOKEN=<token>
+```
+
+Store the exact run URI in `monitoring_baselines.reference_dataset_uri`:
+
+```text
+runs:/<exact-run-id>/references/evaluation_reference.parquet
+```
+
+Arize validation baselines require the labeled evaluation reference so the schema
+contains both prediction and actual labels. Do not register the unlabeled drift
+reference for this upload.
+
+Then run the upload from the repository checkout (the scheduled export image does
+not need DagsHub dependencies):
+
 ```bash
 uv run --extra arize-export --env-file .env python -m src.monitoring.arize upload-baseline \
   --model-version-id 'dagshub:<owner>/<repo>:churn_predictor:<version>' \
@@ -69,4 +90,3 @@ label revisions, retries, and dead letters for a complete monitoring window.
 Revoke the approval or set `ARIZE_EXPORT_ENABLED=false`, redeploy Modal, and keep
 pending outbox rows for later replay. Do not delete prediction, outcome, label,
 baseline, or delivery history.
-
