@@ -62,6 +62,19 @@ def build_modal_images() -> tuple[modal.Image, modal.Image]:
             "sqlalchemy>=2.0,<3",
         )
         .add_local_dir(str(PROJECT_ROOT / "src"), remote_path="/app/src", copy=True)
+        # Modal imports modal_app.py inside every function image. Include its
+        # lightweight deployment helper and the requirements file that helper
+        # references while reconstructing the decorated functions.
+        .add_local_dir(
+            str(PROJECT_ROOT / "deployment"),
+            remote_path="/app/deployment",
+            copy=True,
+        )
+        .add_local_file(
+            str(PROJECT_ROOT / "requirements.txt"),
+            remote_path="/app/requirements.txt",
+            copy=True,
+        )
         .workdir("/app")
     )
     return application_image, arize_export_image

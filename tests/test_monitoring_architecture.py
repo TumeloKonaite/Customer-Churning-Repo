@@ -45,3 +45,11 @@ def test_modal_has_only_arize_export_and_label_materialization_schedules():
     assert "create_database_engine" not in source
     assert "LabelMaterializationJob" not in source
     assert "ArizeExporter(" not in source
+
+
+def test_arize_image_can_hydrate_the_modal_entrypoint():
+    source = Path("deployment/modal_resources.py").read_text(encoding="utf-8")
+
+    assert 'PROJECT_ROOT / "deployment"' in source
+    assert 'PROJECT_ROOT / "requirements.txt"' in source
+    assert 'remote_path="/app/deployment"' in source
