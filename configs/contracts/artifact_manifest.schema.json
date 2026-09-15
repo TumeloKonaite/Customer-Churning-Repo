@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/TumeloKonaite/Customer-Churning-Repo/configs/contracts/artifact_manifest.schema.json",
+  "title": "Customer churn production artifact integrity manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_schema_version",
+    "canonicalization_version",
+    "dagshub_repository_owner",
+    "dagshub_repository_name",
+    "mlflow_experiment_name",
+    "mlflow_run_id",
+    "registered_model_name",
+    "registered_model_version",
+    "model_version_id",
+    "source_commit_sha",
+    "source_branch",
+    "source_worktree_dirty",
+    "selected_classifier_name",
+    "selection_metric",
+    "feature_schema_version",
+    "prediction_contract_version",
+    "prediction_horizon_contract_version",
+    "identity_privacy_contract_version",
+    "monitoring_contract_version",
+    "training_dataset_identity",
+    "classification_threshold",
+    "positive_class",
+    "python_version",
+    "scikit_learn_version",
+    "mlflow_version",
+    "pipeline_sha256",
+    "protected_artifacts",
+    "publication_timestamp_utc"
+  ],
+  "properties": {
+    "manifest_schema_version": {"const": "1.0.0"},
+    "canonicalization_version": {"const": "sorted-compact-json-v1"},
+    "dagshub_repository_owner": {"type": "string", "minLength": 1},
+    "dagshub_repository_name": {"type": "string", "minLength": 1},
+    "mlflow_experiment_name": {"type": "string", "minLength": 1},
+    "mlflow_run_id": {"type": "string", "minLength": 1},
+    "registered_model_name": {"const": "churn_predictor"},
+    "registered_model_version": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "model_version_id": {
+      "type": "string",
+      "pattern": "^dagshub:[^/]+/[^:]+:churn_predictor:[1-9][0-9]*$"
+    },
+    "source_commit_sha": {"type": "string", "minLength": 1},
+    "source_branch": {"type": "string", "minLength": 1},
+    "source_worktree_dirty": {"type": "boolean"},
+    "selected_classifier_name": {"type": "string", "minLength": 1},
+    "selection_metric": {"type": "string", "minLength": 1},
+    "feature_schema_version": {"type": "string", "minLength": 1},
+    "prediction_contract_version": {"type": "string", "minLength": 1},
+    "prediction_horizon_contract_version": {"type": "string", "minLength": 1},
+    "identity_privacy_contract_version": {"type": "string", "minLength": 1},
+    "monitoring_contract_version": {"type": "string", "minLength": 1},
+    "training_dataset_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dataset_name",
+        "source_identity",
+        "dataset_digest",
+        "row_count",
+        "feature_list",
+        "target_column"
+      ],
+      "properties": {
+        "dataset_name": {"type": "string", "minLength": 1},
+        "source_identity": {"type": "string", "minLength": 1},
+        "dataset_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "row_count": {"type": "integer", "minimum": 1},
+        "feature_list": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "target_column": {"type": "string", "minLength": 1}
+      }
+    },
+    "classification_threshold": {"type": "number", "minimum": 0, "maximum": 1},
+    "positive_class": {"type": ["integer", "string"]},
+    "python_version": {"type": "string", "minLength": 1},
+    "scikit_learn_version": {"type": "string", "minLength": 1},
+    "mlflow_version": {"type": "string", "minLength": 1},
+    "pipeline_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "protected_artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "role", "sha256", "size_bytes"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"
+          },
+          "role": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "publication_timestamp_utc": {"type": "string", "format": "date-time"}
+  }
+}

@@ -1,6 +1,5 @@
 PYTHON ?= python
-IMAGE_NAME = churn-predictor
-PORT = 5001
+PORT ?= 5001
 
 ifeq ($(OS),Windows_NT)
 SMOKE_CMD = powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke.ps1
@@ -8,30 +7,40 @@ else
 SMOKE_CMD = sh scripts/smoke.sh
 endif
 
-.PHONY: run train test smoke clean docker-* install lint reqs
+.PHONY: run train test smoke clean install reqs db-check migrate modal-serve modal-deploy ci setup all
 
 # Development commands
 install:
 	$(PYTHON) -m pip install -r requirements.txt
 
 run:
-	$(PYTHON) application.py
+	$(PYTHON) -m uvicorn application:app --host 0.0.0.0 --port $(PORT)
 
 train:
-	$(PYTHON) -m src.train
+	$(PYTHON) -m src.train train --config configs/training.yaml
 
 test:
 	$(PYTHON) -m pytest
 
+db-check:
+	$(PYTHON) -m src.database check
+
+migrate:
+	$(PYTHON) -m alembic upgrade head
+
 reqs:
-	uv pip compile pyproject.toml -o requirements.txt
+	uv lock
+	uv export --no-dev --no-emit-project --no-annotate --no-header -o requirements.txt
 
 smoke:
 	$(SMOKE_CMD)
 
-lint:
-	$(PYTHON) -m flake8 .
-	$(PYTHON) -m black --check .
+# Modal deployment commands
+modal-serve:
+	modal serve modal_app.py
+
+modal-deploy:
+	modal deploy modal_app.py
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -44,30 +53,11 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name ".coverage" -exec rm -rf {} +
 
-# Docker commands
-docker-build:
-	docker build -t $(IMAGE_NAME) .
-
-docker-run:
-	docker run -p $(PORT):$(PORT) $(IMAGE_NAME)
-
-docker-compose-up:
-	docker-compose up --build
-
-docker-compose-down:
-	docker-compose down
-
-# Development with Docker
-docker-dev: docker-compose-up
-
 # CI/CD helpers
-ci: install lint test
+ci: install test
 
 # All-in-one local setup
-setup: clean install train test
-
-# Production deployment helpers
-prod-build: clean docker-build
+setup: clean install test
 
 # Default target
 all: setup

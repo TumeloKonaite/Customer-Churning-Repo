@@ -1,0 +1,44 @@
+version: "1.0.0"
+output_dir: artifacts/training
+dataset:
+  name: bank_customer_churn
+  path: dataset/Churn_Modelling.csv
+  source_identity: repository:dataset/Churn_Modelling.csv
+  target: Exited
+split:
+  test_size: 0.20
+  validation_size: 0.20
+  random_seed: 42
+model:
+  selection_metric: roc_auc
+  classification_threshold: 0.50
+  candidates:
+    logistic_regression:
+      parameters:
+        C: 1.0
+        class_weight: balanced
+        max_iter: 1000
+    decision_tree:
+      parameters:
+        class_weight: balanced
+        max_depth: 10
+        min_samples_split: 2
+    random_forest:
+      parameters:
+        class_weight: balanced
+        n_estimators: 200
+        max_depth: 10
+        n_jobs: -1
+    gradient_boosting:
+      parameters:
+        n_estimators: 100
+        learning_rate: 0.1
+eligibility:
+  minimum_validation_roc_auc: 0.60
+  minimum_test_roc_auc: 0.60
+contracts:
+  feature_schema_version: "1.0.0"
+  prediction_contract_version: "1.0.0"
+  prediction_horizon_version: "90-days-v1"
+  identity_privacy_contract_version: "1.0.0"
+  monitoring_contract_version: "1.0.0"

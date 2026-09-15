@@ -1,0 +1,29 @@
+{
+  "version": "1.1.0",
+  "classification": "approved_non_sensitive_model_features",
+  "prohibited_columns": [
+    "CustomerId", "Surname", "RowNumber", "email", "phone", "telephone", "address"
+  ],
+  "case_insensitive": true,
+  "unkeyed_identifier_hashes_allowed": false,
+  "third_party_exports": {
+    "arize": {
+      "default": "disabled",
+      "correlation_identifier": "prediction_id",
+      "approval_source": "arize_privacy_approvals",
+      "approved_features": [
+        "CreditScore", "Geography", "Gender", "Age", "Tenure", "Balance",
+        "NumOfProducts", "HasCrCard", "IsActiveMember", "EstimatedSalary"
+      ],
+      "approved_tags": [
+        "model_version_id", "deployment_id", "feature_schema_version",
+        "request_source", "batch_id", "label_contract_version",
+        "baseline_version_id"
+      ],
+      "prohibited": [
+        "customer_token", "token_key_id", "customer_id", "row_id", "id",
+        "name", "surname", "email", "phone", "telephone"
+      ]
+    }
+  }
+}

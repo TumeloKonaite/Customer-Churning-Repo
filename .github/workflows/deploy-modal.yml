@@ -1,0 +1,56 @@
+name: Deploy to Modal
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy production app
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      ENABLE_DAGSHUB_TRACKING: "true"
+      DAGSHUB_REPO_OWNER: ${{ secrets.DAGSHUB_REPO_OWNER }}
+      DAGSHUB_REPO_NAME: ${{ secrets.DAGSHUB_REPO_NAME }}
+      DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      MLFLOW_EXPERIMENT_NAME: customer-churn-production
+      MLFLOW_REGISTERED_MODEL_NAME: churn_predictor
+      MLFLOW_MODEL_VERSION: ${{ secrets.MLFLOW_MODEL_VERSION }}
+      EXPECTED_MLFLOW_RUN_ID: ${{ secrets.EXPECTED_MLFLOW_RUN_ID }}
+      EXPECTED_MODEL_VERSION_ID: ${{ secrets.EXPECTED_MODEL_VERSION_ID }}
+      EXPECTED_PIPELINE_SHA256: ${{ secrets.EXPECTED_PIPELINE_SHA256 }}
+      EXPECTED_ARTIFACT_MANIFEST_SHA256: ${{ secrets.EXPECTED_ARTIFACT_MANIFEST_SHA256 }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deployment dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate and package the pinned registered model
+        run: >-
+          python -m src.mlops prepare-deployment
+          --model-uri models:/churn_predictor/${MLFLOW_MODEL_VERSION}
+          --output-dir build/model
+          --expected-run-id ${EXPECTED_MLFLOW_RUN_ID}
+          --expected-pipeline-sha256 ${EXPECTED_PIPELINE_SHA256}
+          --expected-artifact-manifest-sha256 ${EXPECTED_ARTIFACT_MANIFEST_SHA256}
+          --expected-model-version-id ${EXPECTED_MODEL_VERSION_ID}
+          --output json
+
+      - name: Deploy to Modal
+        run: modal deploy modal_app.py

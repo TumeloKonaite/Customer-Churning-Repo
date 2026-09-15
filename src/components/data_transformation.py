@@ -1,140 +1,77 @@
-import json
-import os
-import sys
-from dataclasses import dataclass
+"""Unfitted preprocessing and unified model-pipeline construction."""
 
-import numpy as np
+from __future__ import annotations
+
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.exception import CustomException
-from src.logger import logging
-from src.utils import save_object
+from src.model_schema import (
+    CATEGORICAL_COLUMNS,
+    NUMERIC_COLUMNS,
+)
 
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-ARTIFACTS_DIR = os.path.join(PROJECT_ROOT, "artifacts")
+class ChurnModelPipeline(Pipeline):
+    """Unified sklearn pipeline with a named MLflow pyfunc output contract."""
 
+    def predict_classes(self, features: pd.DataFrame):
+        """Return the classifier labels used by the application adapter."""
+        return super().predict(features)
 
-@dataclass
-class DataTransformationConfig:
-    preprocessor_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "preprocessor.pkl")
-    encoder_obj_file_path: str = os.path.join(ARTIFACTS_DIR, "encoder.pkl")
-    schema_file_path: str = os.path.join(ARTIFACTS_DIR, "schema.json")
-    feature_columns_file_path: str = os.path.join(ARTIFACTS_DIR, "feature_columns.json")
-
-
-class DataTransformation:
-    def __init__(self):
-        self.data_transformation_config = DataTransformationConfig()
-        self.target_column_name = "Exited"
-        self.numerical_columns = [
-            "CreditScore",
-            "Age",
-            "Tenure",
-            "Balance",
-            "NumOfProducts",
-            "HasCrCard",
-            "IsActiveMember",
-            "EstimatedSalary",
-        ]
-        self.categorical_columns = ["Geography", "Gender"]
-
-    def initiate_data_transformation(self, train_path, test_path):
-        try:
-            train_df = pd.read_csv(train_path)
-            test_df = pd.read_csv(test_path)
-
-            logging.info("Read train and test data completed")
-
-            # Drop identifier columns if present
-            drop_cols = ["RowNumber", "CustomerId", "Surname"]
-            train_df = train_df.drop(columns=[c for c in drop_cols if c in train_df.columns])
-            test_df = test_df.drop(columns=[c for c in drop_cols if c in test_df.columns])
-
-            target_column_name = self.target_column_name
-            feature_columns = self.numerical_columns + self.categorical_columns
-            feature_schema = [
-                {"name": col, "dtype": str(train_df[col].dtype)}
-                for col in feature_columns
-            ]
-
-            missing_cols = [col for col in feature_columns if col not in train_df.columns]
-            if missing_cols:
-                raise CustomException(
-                    f"Missing required columns for transformation: {missing_cols}", sys
-                )
-
-            input_feature_train_df = train_df[feature_columns].copy()
-            target_feature_train_df = train_df[target_column_name]
-
-            input_feature_test_df = test_df[feature_columns].copy()
-            target_feature_test_df = test_df[target_column_name]
-
-            logging.info("Applying StandardScaler and OneHotEncoder as per notebook.")
-
-            imputer = SimpleImputer(strategy="median")
-            input_feature_train_df[self.numerical_columns] = imputer.fit_transform(
-                input_feature_train_df[self.numerical_columns]
-            )
-            input_feature_test_df[self.numerical_columns] = imputer.transform(
-                input_feature_test_df[self.numerical_columns]
-            )
-
-            scaler = StandardScaler()
-            train_num = scaler.fit_transform(
-                input_feature_train_df[self.numerical_columns]
-            )
-            test_num = scaler.transform(input_feature_test_df[self.numerical_columns])
-
-            encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
-            train_cat = encoder.fit_transform(
-                input_feature_train_df[self.categorical_columns]
-            )
-            test_cat = encoder.transform(input_feature_test_df[self.categorical_columns])
-
-            input_feature_train_arr = np.hstack([train_num, train_cat])
-            input_feature_test_arr = np.hstack([test_num, test_cat])
-
-            feature_names = list(self.numerical_columns) + list(
-                encoder.get_feature_names_out(self.categorical_columns)
-            )
-
-            train_arr = np.c_[input_feature_train_arr, np.array(target_feature_train_df)]
-            test_arr = np.c_[input_feature_test_arr, np.array(target_feature_test_df)]
-
-            logging.info("Saving scaler, encoder, and schema artifacts.")
-
-            os.makedirs(os.path.dirname(self.data_transformation_config.schema_file_path), exist_ok=True)
-
-            save_object(
-                file_path=self.data_transformation_config.preprocessor_obj_file_path,
-                obj=scaler,
-            )
-
-            save_object(
-                file_path=self.data_transformation_config.encoder_obj_file_path,
-                obj=encoder,
-            )
-
-            schema = {
-                "num_cols": self.numerical_columns,
-                "all_cols": feature_columns,
-                "feature_schema": feature_schema,
+    def predict(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Return the stable named output used by the MLflow pyfunc flavor."""
+        labels = self.predict_classes(features)
+        if not hasattr(self, "predict_proba"):
+            raise ValueError("Production churn pipeline must provide class probabilities")
+        probability_matrix = self.predict_proba(features)
+        positive_index = list(self.classes_).index(1)
+        return pd.DataFrame(
+            {
+                "predicted_class": labels.astype("int64"),
+                "churn_probability": probability_matrix[:, positive_index].astype("float64"),
             }
-            with open(self.data_transformation_config.schema_file_path, "w") as f:
-                json.dump(schema, f)
+        )
 
-            with open(
-                self.data_transformation_config.feature_columns_file_path, "w"
-            ) as f:
-                json.dump(feature_names, f)
+    def predict_outputs(self, features: pd.DataFrame) -> pd.DataFrame:
+        """Explicit alias retained for contract-oriented callers."""
+        return self.predict(features)
 
-            return (
-                train_arr,
-                test_arr,
-                self.data_transformation_config.preprocessor_obj_file_path,
-            )
-        except Exception as e:
-            raise CustomException(e, sys)
+
+def build_preprocessor() -> ColumnTransformer:
+    """Build a fresh preprocessor that is fitted only as part of a model pipeline."""
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ]
+    )
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent", missing_values=None)),
+            (
+                "encoder",
+                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+            ),
+        ]
+    )
+    return ColumnTransformer(
+        transformers=[
+            ("numeric", numeric_pipeline, NUMERIC_COLUMNS),
+            ("categorical", categorical_pipeline, CATEGORICAL_COLUMNS),
+        ],
+        remainder="drop",
+        verbose_feature_names_out=False,
+    )
+
+
+def build_model_pipeline(classifier) -> ChurnModelPipeline:
+    """Build the single executable training-and-serving artifact."""
+    return ChurnModelPipeline(
+        steps=[
+            ("preprocessor", build_preprocessor()),
+            ("classifier", classifier),
+        ]
+    )

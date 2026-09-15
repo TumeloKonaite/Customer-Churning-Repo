@@ -1,15 +1,7 @@
 {
-  "num_cols": [
-    "CreditScore",
-    "Age",
-    "Tenure",
-    "Balance",
-    "NumOfProducts",
-    "HasCrCard",
-    "IsActiveMember",
-    "EstimatedSalary"
-  ],
-  "all_cols": [
+  "schema_version": "1.0.0",
+  "target": "Exited",
+  "canonical_feature_order": [
     "CreditScore",
     "Geography",
     "Gender",
@@ -21,16 +13,127 @@
     "IsActiveMember",
     "EstimatedSalary"
   ],
-  "feature_schema": [
-    {"name": "CreditScore", "dtype": "int64"},
-    {"name": "Geography", "dtype": "object"},
-    {"name": "Gender", "dtype": "object"},
-    {"name": "Age", "dtype": "int64"},
-    {"name": "Tenure", "dtype": "int64"},
-    {"name": "Balance", "dtype": "float64"},
-    {"name": "NumOfProducts", "dtype": "int64"},
-    {"name": "HasCrCard", "dtype": "int64"},
-    {"name": "IsActiveMember", "dtype": "int64"},
-    {"name": "EstimatedSalary", "dtype": "float64"}
+  "numeric_columns": [
+    "CreditScore",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary"
+  ],
+  "categorical_columns": ["Geography", "Gender"],
+  "features": [
+    {
+      "name": "CreditScore",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "Geography",
+      "data_type": "string",
+      "required": true,
+      "nullable": false,
+      "feature_type": "categorical",
+      "accepted_values": null,
+      "unseen_value_policy": "OneHotEncoder(handle_unknown='ignore')",
+      "transformation_owner": "pipeline.preprocessor.categorical.imputer_and_encoder",
+      "known_training_values": ["France", "Germany", "Spain"]
+    },
+    {
+      "name": "Gender",
+      "data_type": "string",
+      "required": true,
+      "nullable": false,
+      "feature_type": "categorical",
+      "accepted_values": null,
+      "unseen_value_policy": "OneHotEncoder(handle_unknown='ignore')",
+      "transformation_owner": "pipeline.preprocessor.categorical.imputer_and_encoder",
+      "known_training_values": ["Female", "Male"]
+    },
+    {
+      "name": "Age",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "Tenure",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "Balance",
+      "data_type": "number",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "NumOfProducts",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "HasCrCard",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "IsActiveMember",
+      "data_type": "integer",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    },
+    {
+      "name": "EstimatedSalary",
+      "data_type": "number",
+      "required": true,
+      "nullable": false,
+      "feature_type": "numeric",
+      "transformation_owner": "pipeline.preprocessor.numeric.imputer_and_scaler"
+    }
+  ],
+  "missing_value_policy": {
+    "api": "required, non-nullable fields are rejected before prediction",
+    "batch": "required, non-nullable fields are rejected before prediction",
+    "pipeline": "approved missing values are imputed inside the fitted pipeline"
+  },
+  "categorical_encoding": {
+    "type": "one_hot",
+    "handle_unknown": "ignore"
+  },
+  "transformed_feature_names": [
+    "CreditScore",
+    "Age",
+    "Tenure",
+    "Balance",
+    "NumOfProducts",
+    "HasCrCard",
+    "IsActiveMember",
+    "EstimatedSalary",
+    "Geography_France",
+    "Geography_Germany",
+    "Geography_Spain",
+    "Gender_Female",
+    "Gender_Male"
   ]
 }
