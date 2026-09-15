@@ -48,6 +48,8 @@ The system has two main paths:
 Arize export is asynchronous and disabled until a matching, unexpired privacy
 approval exists. Operational setup and rollback are in
 [the Arize runbook](docs/monitoring/arize-operations.md).
+View the deployed model in the
+[Arize churn predictor dashboard](https://app.arize.com/organizations/QWNjb3VudE9yZ2FuaXphdGlvbjo1MDEwMDplbGtR/spaces/U3BhY2U6NTM4ODY6QStEeA==/models/modelName/churn_predictor?selectedTab=performance).
 
 ### Main API endpoints
 
